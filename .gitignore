@@ -1,0 +1,28 @@
+# エージェント・ローカル設定
+.agents/
+.gemini/
+.env
+.env.*
+*.local
+
+# モデルバイナリ・辞書（HF Hubからストリーミングするため一切コミットしない）
+*.onnx
+*.onnx_data
+*.bin
+*.model
+*.spm
+*.fb
+*.wasm
+
+# 依存・ビルド成果物
+node_modules/
+dist/
+dist-ssr/
+
+# エディタ・OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+npm-debug.log*

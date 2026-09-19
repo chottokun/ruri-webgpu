@@ -1,0 +1,20 @@
+{
+  "name": "ruri-webgpu",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "onnxruntime-web": "^1.21.0",
+    "sentencepiece-js": "^1.1.0"
+  },
+  "devDependencies": {
+    "coi-serviceworker": "^0.1.7",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}
