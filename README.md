@@ -1,6 +1,6 @@
 # ruri-webgpu
 
-Hugging Face Hub 完全直結・ブラウザ内 WebGPU 日本語セマンティック検索デモ
+ruri-v3-30m-liteの WebGPU 日本語セマンティック検索デモ
 
 ## 概要
 
