@@ -58,8 +58,9 @@ async function bootstrap(): Promise<void> {
 
     for (let i = 0; i < docs.length; i++) {
       const doc = docs[i];
-      // 文書埋め込み（isQuery = false によりプレフィックス「文章: 」が付与される）
-      const vector = await model.embed(doc.text, false);
+      // タイトルと本文を結合して埋め込みを生成（タイトルが持つ重要な意味情報を反映）
+      const fullDocText = `${doc.title}\n${doc.text}`;
+      const vector = await model.embed(fullDocText, false);
       vectorStore.add(doc, vector);
       progressUI.updateIndexProgress(i + 1, docs.length);
     }
