@@ -114,12 +114,12 @@ export class SearchView {
       const card = document.createElement('div');
       card.className = 'result-card glass-panel';
 
-      const scorePercent = (result.score * 100).toFixed(1);
+      const scoreVal = result.score.toFixed(3);
 
       card.innerHTML = `
         <div class="result-header">
           <h3 class="result-title">${this.escapeHtml(result.title)}</h3>
-          <span class="score-badge">${scorePercent}% 類似</span>
+          <span class="score-badge">類似度スコア: ${scoreVal}</span>
         </div>
         <div>
           <span class="tag-badge">${this.escapeHtml(result.category)}</span>
