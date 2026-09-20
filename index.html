@@ -7,86 +7,67 @@
     <!-- Cross-Origin Isolation (WebGPU / SharedArrayBuffer 必須) -->
     <script src="/coi-serviceworker.js"></script>
 
-    <title>ruri-webgpu — WebGPU 日本語セマンティック検索デモ</title>
+    <title>ruri-webgpu — ruri-v3-30m-liteの WebGPU 日本語セマンティック検索デモ</title>
     <meta name="description" content="Hugging Face Hub 直結・ブラウザ内 WebGPU 推論による完全クライアントサイド日本語セマンティック検索デモ" />
-    <meta name="keywords" content="WebGPU, ONNX Runtime, Hugging Face, ruri, セマンティック検索, ベクトル検索, 自然言語処理" />
 
     <!-- Google Fonts: Inter & Noto Sans JP -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <div id="app">
-      <header class="app-header">
-        <div class="header-container">
-          <div class="brand">
-            <h1 class="brand-title">
-              <span class="gradient-text">ruri-webgpu</span>
-            </h1>
-            <p class="brand-subtitle">Hugging Face Hub 直結・ブラウザ内 WebGPU 日本語セマンティック検索</p>
-          </div>
-          <div class="hardware-status">
-            <span id="device-badge" class="badge badge-loading">検出中...</span>
-          </div>
+    <div class="container">
+      <header style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <h1 style="margin: 0 0 0.5rem 0; font-size: 1.8rem; letter-spacing: -0.02em;">
+            <span style="background: linear-gradient(135deg, #a78bfa, #60a5fa); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">ruri-webgpu</span>
+          </h1>
+          <p style="margin: 0; color: var(--text-muted); font-size: 0.95rem;">
+            ruri-v3-30m-liteの WebGPU 日本語セマンティック検索デモ
+          </p>
+        </div>
+        <div>
+          <span id="device-badge" class="status-badge mode-wasm">検出中...</span>
         </div>
       </header>
 
-      <main class="main-content">
-        <!-- 初期化・ダウンロード進捗エリア -->
-        <section id="init-section" class="card glass-card">
-          <div class="init-header">
-            <h2 id="init-title" class="section-title">モデル・辞書の初期化</h2>
-            <span id="init-percent" class="percent-text">0%</span>
-          </div>
-          <div class="progress-bar-container">
-            <div id="init-progress-bar" class="progress-bar"></div>
-          </div>
-          <p id="init-status-text" class="status-message">Hugging Face Hub からリソースを読み込みます...</p>
-          <div id="init-meta" class="init-meta">
-            <span id="init-speed">0 MB/s</span>
-            <span id="init-size">0 MB / 0 MB</span>
-          </div>
-        </section>
+      <main>
+        <!-- 初期化・ダウンロード進捗表示コンテナ -->
+        <div id="progress-container" class="glass-panel progress-container"></div>
 
-        <!-- 検索UIエリア (初期化完了後に表示) -->
-        <section id="search-section" class="card glass-card search-card hidden">
-          <div class="search-box-wrapper">
-            <div class="search-input-container">
-              <svg class="search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              </svg>
-              <input
-                id="search-input"
-                type="text"
-                class="search-input"
-                placeholder="意味で検索（例: 「日本の首都」「宇宙の成り立ち」「最新のAI技術」）..."
-                autocomplete="off"
-              />
-              <div id="search-spinner" class="spinner hidden"></div>
-            </div>
-            <div class="search-metrics">
-              <span id="corpus-stats" class="stats-text">インデックス文書数: 0 件</span>
-              <span id="search-latency" class="stats-text"></span>
-            </div>
+        <!-- 検索UIコンテナ (初期化後に活性化) -->
+        <div id="search-section" class="hidden">
+          <div class="search-container">
+            <input
+              id="search-input"
+              type="text"
+              class="search-input"
+              placeholder="意味で検索（例: 「日本の首都」「宇宙の成り立ち」「AIと機械学習」）..."
+              autocomplete="off"
+            />
           </div>
 
-          <!-- 検索結果一覧 -->
-          <div id="search-results" class="search-results-list">
-            <div class="placeholder-state">
-              <p>キーワードを入力すると、リアルタイムにセマンティック検索を実行します。</p>
-            </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; font-size: 0.85rem; color: var(--text-muted);">
+            <span id="corpus-stats">インデックス文書数: 0 件</span>
+            <span id="search-latency"></span>
           </div>
-        </section>
+
+          <div id="search-spinner" class="spinner hidden"></div>
+
+          <div id="empty-state" class="empty-state hidden">
+            <p>一致する検索結果が見つかりませんでした。</p>
+          </div>
+
+          <div id="search-results" class="search-results"></div>
+        </div>
       </main>
 
-      <footer class="app-footer">
+      <footer style="margin-top: 3rem; text-align: center; font-size: 0.85rem; color: var(--text-muted); border-top: 1px solid var(--glass-border); padding-top: 1.5rem;">
         <p>
-          Powered by <a href="https://huggingface.co/Chottokun/ruri-v3-30m-lite" target="_blank" rel="noopener">Chottokun/ruri-v3-30m-lite</a> & 
-          <a href="https://onnxruntime.ai/" target="_blank" rel="noopener">ONNX Runtime Web</a> (WebGPU / WASM)
+          Powered by <a href="https://huggingface.co/Chottokun/ruri-v3-30m-lite" target="_blank" rel="noopener" style="color: #a78bfa; text-decoration: none;">Chottokun/ruri-v3-30m-lite</a> & 
+          <a href="https://onnxruntime.ai/" target="_blank" rel="noopener" style="color: #60a5fa; text-decoration: none;">ONNX Runtime Web</a> (WebGPU / WASM)
         </p>
       </footer>
     </div>

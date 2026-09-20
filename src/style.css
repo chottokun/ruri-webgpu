@@ -1,0 +1,278 @@
+/*
+ * プレミアムダークモードベーススタイル
+ * 深い紺紫 (hsl(248, 90%, 8%)) を基調とします
+ */
+:root {
+  --bg-color: hsl(248, 90%, 8%);
+  --text-color: #ffffff;
+  --text-muted: rgba(255, 255, 255, 0.7);
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-hover: rgba(255, 255, 255, 0.1);
+  --glow-color: rgba(147, 51, 234, 0.5); /* 検索バーフォーカス時のグロー色 */
+  --badge-webgpu: #10b981; /* 緑のアクセントカラー */
+  --badge-wasm: #3b82f6; /* 青のアクセントカラー */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: var(--font-family);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * レイアウトコンテナ
+ * モバイル・デスクトップ両対応のレスポンシブデザイン
+ */
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/*
+ * グラスモーフィズム共通クラス
+ * 背景ぼかしと半透明ボーダー
+ */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+}
+
+/*
+ * ステータスバッジ (WebGPU / WASM 実行モード)
+ */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.status-badge.mode-webgpu {
+  background: rgba(16, 185, 129, 0.2);
+  color: var(--badge-webgpu);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.status-badge.mode-wasm {
+  background: rgba(59, 130, 246, 0.2);
+  color: var(--badge-wasm);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+/*
+ * 検索バー
+ * フォーカス時のグローアニメーション
+ */
+.search-container {
+  position: relative;
+  margin-bottom: 2rem;
+}
+
+.search-input {
+  width: 100%;
+  padding: 1rem 1.5rem;
+  font-size: 1.125rem;
+  color: var(--text-color);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 9999px;
+  box-sizing: border-box;
+  outline: none;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-input:focus {
+  border-color: rgba(147, 51, 234, 0.8);
+  box-shadow: 0 0 15px var(--glow-color);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/*
+ * 検索結果カード
+ * ホバーエフェクト
+ */
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.result-card {
+  padding: 1.5rem;
+  transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.result-card:hover {
+  transform: translateY(-2px);
+  background: var(--glass-hover);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.result-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-color);
+  word-break: break-word;
+}
+
+/*
+ * 類似度スコアバッジ
+ */
+.score-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  color: #a78bfa; /* 紫のアクセント */
+  font-weight: bold;
+}
+
+/*
+ * カテゴリバッジ・タグスタイル
+ */
+.tag-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  background: rgba(236, 72, 153, 0.2); /* ピンクのアクセント */
+  color: #f472b6;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid rgba(236, 72, 153, 0.3);
+  margin-right: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.result-text {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.6;
+  font-size: 1rem;
+}
+
+/*
+ * スピナー / ローディングインジケーター
+ */
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--glass-border);
+  border-top: 3px solid #a78bfa;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 2rem auto;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-muted);
+  font-size: 1.125rem;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/*
+ * プログレスUI (ProgressUI) 用スタイル
+ */
+.progress-container {
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.progress-title {
+  font-weight: 600;
+}
+
+.progress-stats {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-bar-bg {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 0.5rem;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #8b5cf6, #3b82f6);
+  width: 0%;
+  transition: width 0.3s ease;
+}
+
+.fade-out {
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+}
+
+.success-message {
+  color: #10b981;
+  font-weight: bold;
+  text-align: center;
+  margin-top: 1rem;
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 600px) {
+  .result-header {
+    flex-direction: column;
+  }
+  .score-badge {
+    align-self: flex-start;
+  }
+}

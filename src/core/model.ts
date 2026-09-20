@@ -122,14 +122,60 @@ export class EmbeddingModel {
       this.session = await ort.InferenceSession.create(modelBuffer, sessionOptions);
     } catch (err) {
       if (this.device === 'webgpu') {
-        console.warn('WebGPU での初期化に失敗しました。WASM にフォールバックします:', err);
-        this.device = 'wasm';
-        const fallbackBuffer = await fetchWithCache(HF_CONFIG.files.modelFp32);
-        this.session = await ort.InferenceSession.create(fallbackBuffer, {
-          executionProviders: ['wasm'],
-        });
+        console.warn('model_fp16.onnx の WebGPU 読み込みに失敗しました。model.onnx (FP32) での WebGPU 実行を試行します:', err);
+
+        const fp32Buffer = await fetchWithCache(
+          HF_CONFIG.files.modelFp32,
+          (loaded, total, speed) => {
+            if (onProgress) {
+              onProgress({
+                stage: 'downloading_model',
+                loadedBytes: loaded,
+                totalBytes: total,
+                speed,
+                message: `FP32 モデルダウンロード中 (${(loaded / 1024 / 1024).toFixed(1)}MB / ${(total / 1024 / 1024).toFixed(1)}MB)`,
+              });
+            }
+          }
+        );
+
+        try {
+          // FP32 モデルで WebGPU 実行を試みる
+          this.session = await ort.InferenceSession.create(fp32Buffer, {
+            executionProviders: ['webgpu'],
+            graphOptimizationLevel: 'all',
+          });
+          console.log('model.onnx (FP32) による WebGPU セッションの作成に成功しました。');
+        } catch (webgpuFp32Err) {
+          console.warn('WebGPU での実行が利用できません。WASM CPU にフォールバックします:', webgpuFp32Err);
+          this.device = 'wasm';
+          this.session = await ort.InferenceSession.create(fp32Buffer, {
+            executionProviders: ['wasm'],
+          });
+        }
       } else {
         throw err;
+      }
+    }
+
+    // 5. 推論カーネルのウォームアップ検証
+    // WebGPU EP は session.run() 時に演算子未対応エラー (例: SkipLayerNormalization Beta must be 1D) を出す場合があるため、
+    // 事前にダミー推論を実行して検証し、失敗時は WASM に安全にフォールバックします。
+    try {
+      await this.runInference('テスト', false);
+      console.log(`推論カーネルのウォームアップに成功しました (${this.device.toUpperCase()})`);
+    } catch (warmupErr) {
+      if (this.device === 'webgpu') {
+        console.warn('WebGPU 推論カーネルでエラーが発生しました。WASM CPU にフォールバックします:', warmupErr);
+        this.device = 'wasm';
+        const fp32Buffer = await fetchWithCache(HF_CONFIG.files.modelFp32);
+        this.session = await ort.InferenceSession.create(fp32Buffer, {
+          executionProviders: ['wasm'],
+        });
+        await this.runInference('テスト', false);
+        console.log('WASM CPU での推論確認に成功しました。');
+      } else {
+        throw warmupErr;
       }
     }
 
@@ -144,33 +190,43 @@ export class EmbeddingModel {
   }
 
   /**
-   * 単一テキストの埋め込みベクトルを計算します。
+   * 内部用推論実行ロジック
    */
-  async embed(text: string, isQuery: boolean = false): Promise<Float32Array> {
+  private async runInference(text: string, isQuery: boolean): Promise<Float32Array> {
     if (!this.session) {
-      throw new Error('モデルが初期化されていません。先に init() を呼び出してください。');
+      throw new Error('モデルセッションが初期化されていません。');
     }
 
     const prefix = isQuery ? PREFIXES.query : PREFIXES.doc;
     const tokenized = this.tokenizer.encodeForModel(text, prefix);
     const { inputIds, attentionMask, tokenTypeIds, seqLength } = tokenized;
 
-    const feeds: Record<string, ort.Tensor> = {
-      input_ids: new ort.Tensor('int64', inputIds, [1, seqLength]),
-      attention_mask: new ort.Tensor('int64', attentionMask, [1, seqLength]),
-      token_type_ids: new ort.Tensor('int64', tokenTypeIds, [1, seqLength]),
-    };
+    const inputNames = new Set(this.session.inputNames);
+    const feeds: Record<string, ort.Tensor> = {};
+
+    if (inputNames.has('input_ids')) {
+      feeds['input_ids'] = new ort.Tensor('int64', inputIds, [1, seqLength]);
+    }
+    if (inputNames.has('attention_mask')) {
+      feeds['attention_mask'] = new ort.Tensor('int64', attentionMask, [1, seqLength]);
+    }
+    if (inputNames.has('token_type_ids')) {
+      feeds['token_type_ids'] = new ort.Tensor('int64', tokenTypeIds, [1, seqLength]);
+    }
 
     const results = await this.session.run(feeds);
-    // last_hidden_state を取得 (形状: [1, seqLength, hiddenDim])
     const outputTensor = results.last_hidden_state || Object.values(results)[0];
     const hiddenData = outputTensor.data as Float32Array;
 
-    // Mean Pooling の実行
     const pooled = meanPool(hiddenData, attentionMask, seqLength, EMBED_DIM);
-
-    // L2 正規化の実行
     return l2Normalize(pooled);
+  }
+
+  /**
+   * 単一テキストの埋め込みベクトルを計算します。
+   */
+  async embed(text: string, isQuery: boolean = false): Promise<Float32Array> {
+    return this.runInference(text, isQuery);
   }
 
   /**
