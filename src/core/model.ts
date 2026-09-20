@@ -10,9 +10,15 @@ import { EMBED_DIM, HF_CONFIG, PREFIXES } from '../config';
 import { fetchWithCache } from './hf_loader';
 import { SpmTokenizer } from './tokenizer';
 
+// グローバル (CDN) の ort を優先利用し、Web Worker 内での Vite メインバンドル巻き込みバグを防止
+function getOrt(): typeof ort {
+  return (typeof window !== 'undefined' && (window as any).ort) || ort;
+}
+
 // GitHub Pages (サブディレクトリ) での WASM 解決とハング防止設定
-ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
-ort.env.wasm.numThreads = 1; // COOP/COEPのマルチスレッド競合によるハングを完全に防止
+const ortInstance = getOrt();
+ortInstance.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
+ortInstance.env.wasm.numThreads = 1; // COOP/COEPのマルチスレッド競合によるハングを完全に防止
 
 export interface ModelInitProgress {
   stage: 'downloading_tokenizer' | 'downloading_model' | 'creating_session' | 'ready';
@@ -123,7 +129,7 @@ export class EmbeddingModel {
     };
 
     try {
-      this.session = await ort.InferenceSession.create(modelBuffer, sessionOptions);
+      this.session = await getOrt().InferenceSession.create(modelBuffer, sessionOptions);
     } catch (err) {
       if (this.device === 'webgpu') {
         console.warn('model_fp16.onnx の WebGPU 読み込みに失敗しました。model.onnx (FP32) での WebGPU 実行を試行します:', err);
@@ -145,7 +151,7 @@ export class EmbeddingModel {
 
         try {
           // FP32 モデルで WebGPU 実行を試みる
-          this.session = await ort.InferenceSession.create(fp32Buffer, {
+          this.session = await getOrt().InferenceSession.create(fp32Buffer, {
             executionProviders: ['webgpu'],
             graphOptimizationLevel: 'all',
           });
@@ -153,7 +159,7 @@ export class EmbeddingModel {
         } catch (webgpuFp32Err) {
           console.warn('WebGPU での実行が利用できません。WASM CPU にフォールバックします:', webgpuFp32Err);
           this.device = 'wasm';
-          this.session = await ort.InferenceSession.create(fp32Buffer, {
+          this.session = await getOrt().InferenceSession.create(fp32Buffer, {
             executionProviders: ['wasm'],
           });
         }
@@ -174,7 +180,7 @@ export class EmbeddingModel {
         console.warn('WebGPU 推論カーネルでエラーまたはタイムアウトが発生しました。WASM CPU にフォールバックします:', warmupErr);
         this.device = 'wasm';
         const fp32Buffer = await fetchWithCache(HF_CONFIG.files.modelFp32);
-        this.session = await ort.InferenceSession.create(fp32Buffer, {
+        this.session = await getOrt().InferenceSession.create(fp32Buffer, {
           executionProviders: ['wasm'],
         });
         await this.runInference('テスト', false);
@@ -208,15 +214,16 @@ export class EmbeddingModel {
 
     const inputNames = new Set(this.session.inputNames);
     const feeds: Record<string, ort.Tensor> = {};
+    const Tensor = getOrt().Tensor;
 
     if (inputNames.has('input_ids')) {
-      feeds['input_ids'] = new ort.Tensor('int64', inputIds, [1, seqLength]);
+      feeds['input_ids'] = new Tensor('int64', inputIds, [1, seqLength]);
     }
     if (inputNames.has('attention_mask')) {
-      feeds['attention_mask'] = new ort.Tensor('int64', attentionMask, [1, seqLength]);
+      feeds['attention_mask'] = new Tensor('int64', attentionMask, [1, seqLength]);
     }
     if (inputNames.has('token_type_ids')) {
-      feeds['token_type_ids'] = new ort.Tensor('int64', tokenTypeIds, [1, seqLength]);
+      feeds['token_type_ids'] = new Tensor('int64', tokenTypeIds, [1, seqLength]);
     }
 
     const results = await this.session.run(feeds);

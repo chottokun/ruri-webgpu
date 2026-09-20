@@ -7,6 +7,9 @@
     <!-- Cross-Origin Isolation (WebGPU / SharedArrayBuffer 必須) -->
     <script src="/coi-serviceworker.js"></script>
 
+    <!-- ONNX Runtime Web (CDNからスタンドアローン版をロードしWorkerバンドル混線を防止) -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.all.min.js"></script>
+
     <title>ruri-webgpu — ruri-v3-30m-liteの WebGPU 日本語セマンティック検索デモ</title>
     <meta name="description" content="Hugging Face Hub 直結・ブラウザ内 WebGPU 推論による完全クライアントサイド日本語セマンティック検索デモ" />
 
