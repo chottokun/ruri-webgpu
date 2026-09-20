@@ -10,6 +10,10 @@ import { EMBED_DIM, HF_CONFIG, PREFIXES } from '../config';
 import { fetchWithCache } from './hf_loader';
 import { SpmTokenizer } from './tokenizer';
 
+// GitHub Pages (サブディレクトリ) での WASM 解決とハング防止設定
+ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
+ort.env.wasm.numThreads = 1; // COOP/COEPのマルチスレッド競合によるハングを完全に防止
+
 export interface ModelInitProgress {
   stage: 'downloading_tokenizer' | 'downloading_model' | 'creating_session' | 'ready';
   loadedBytes?: number;
@@ -158,15 +162,16 @@ export class EmbeddingModel {
       }
     }
 
-    // 5. 推論カーネルのウォームアップ検証
-    // WebGPU EP は session.run() 時に演算子未対応エラー (例: SkipLayerNormalization Beta must be 1D) を出す場合があるため、
-    // 事前にダミー推論を実行して検証し、失敗時は WASM に安全にフォールバックします。
+    // 5. 推論カーネルのウォームアップ検証 (5秒タイムアウト付き)
     try {
-      await this.runInference('テスト', false);
+      await Promise.race([
+        this.runInference('テスト', false),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('WebGPU 推論タイムアウト (5s)')), 5000)),
+      ]);
       console.log(`推論カーネルのウォームアップに成功しました (${this.device.toUpperCase()})`);
     } catch (warmupErr) {
       if (this.device === 'webgpu') {
-        console.warn('WebGPU 推論カーネルでエラーが発生しました。WASM CPU にフォールバックします:', warmupErr);
+        console.warn('WebGPU 推論カーネルでエラーまたはタイムアウトが発生しました。WASM CPU にフォールバックします:', warmupErr);
         this.device = 'wasm';
         const fp32Buffer = await fetchWithCache(HF_CONFIG.files.modelFp32);
         this.session = await ort.InferenceSession.create(fp32Buffer, {
