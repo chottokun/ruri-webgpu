@@ -25,3 +25,9 @@ npm run dev
 # プロダクションビルド
 npm run build
 ```
+
+## 技術ドキュメント
+
+- [日本語特化トークナイザーにおける英字クエリの挙動と対策](docs/tokenizer_insights.md)
+- [Vite における ONNX Runtime Web Worker 混線バグと根本解決メモ](docs/vite_worker_bundling_troubleshooting.md)
+
