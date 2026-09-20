@@ -19,16 +19,10 @@ async function bootstrap(): Promise<void> {
   // 1. ProgressUI の初期化
   const progressUI = new ProgressUI('progress-container');
 
-  // 2. WebGPU 対応判定とバッジの更新
-  const hasWebGPU = await EmbeddingModel.checkWebGPUSupport();
+  // 2. 初期バッジ表示
   if (deviceBadge) {
-    if (hasWebGPU) {
-      deviceBadge.textContent = 'WebGPU (FP16)';
-      deviceBadge.className = 'status-badge mode-webgpu';
-    } else {
-      deviceBadge.textContent = 'WASM CPU (FP32)';
-      deviceBadge.className = 'status-badge mode-wasm';
-    }
+    deviceBadge.textContent = '判定中...';
+    deviceBadge.className = 'status-badge mode-wasm';
   }
 
   // 3. 埋め込みモデルの初期化
