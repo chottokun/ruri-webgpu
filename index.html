@@ -53,9 +53,23 @@
             />
           </div>
 
-          <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; font-size: 0.85rem; color: var(--text-muted);">
-            <span id="corpus-stats">インデックス文書数: 0 件</span>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; font-size: 0.85rem; color: var(--text-muted); flex-wrap: wrap; gap: 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <span id="corpus-stats">インデックス文書数: 0 件</span>
+              <button id="corpus-toggle-btn" class="corpus-toggle-btn" type="button">
+                <span>📖 収録文書一覧を見る</span>
+              </button>
+            </div>
             <span id="search-latency"></span>
+          </div>
+
+          <!-- 収録文書一覧アコーディオン (初期は非表示) -->
+          <div id="corpus-panel" class="corpus-panel hidden">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+              <h3 style="margin: 0; font-size: 1rem; color: #ffffff;">収録文書一覧（カードクリックで検索を試せます）</h3>
+            </div>
+            <div id="corpus-filters" class="corpus-filter-bar"></div>
+            <div id="corpus-grid" class="corpus-grid"></div>
           </div>
 
           <div id="search-spinner" class="spinner hidden"></div>

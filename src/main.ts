@@ -82,6 +82,8 @@ async function bootstrap(): Promise<void> {
       'empty-state'
     );
 
+    const searchInputEl = document.getElementById('search-input') as HTMLInputElement | null;
+
     searchView.onSearch(async (query: string) => {
       const startTime = performance.now();
       // クエリ埋め込み（isQuery = true によりプレフィックス「検索クエリ: 」が付与される）
@@ -96,10 +98,101 @@ async function bootstrap(): Promise<void> {
       return results;
     });
 
+    // 7. 収録文書一覧の表示・フィルタ・クリック検索の制御
+    setupCorpusViewer(docs, (selectedTitle) => {
+      if (searchInputEl) {
+        searchInputEl.value = selectedTitle;
+        searchInputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        searchInputEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        searchInputEl.focus();
+      }
+    });
+
   } catch (error) {
     console.error('アプリケーション初期化エラー:', error);
     alert(`初期化中にエラーが発生しました: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+/**
+ * 収録文書一覧アコーディオンのセットアップ
+ */
+function setupCorpusViewer(docs: DocumentItem[], onSelect: (title: string) => void): void {
+  const toggleBtn = document.getElementById('corpus-toggle-btn');
+  const panel = document.getElementById('corpus-panel');
+  const filtersContainer = document.getElementById('corpus-filters');
+  const gridContainer = document.getElementById('corpus-grid');
+
+  if (!toggleBtn || !panel || !filtersContainer || !gridContainer) return;
+
+  let isOpen = false;
+  toggleBtn.addEventListener('click', () => {
+    isOpen = !isOpen;
+    if (isOpen) {
+      panel.classList.remove('hidden');
+      toggleBtn.innerHTML = '<span>🔼 収録文書一覧を閉じる</span>';
+    } else {
+      panel.classList.add('hidden');
+      toggleBtn.innerHTML = '<span>📖 収録文書一覧を見る</span>';
+    }
+  });
+
+  // ユニークカテゴリの抽出
+  const categories = ['すべて', ...Array.from(new Set(docs.map((d) => d.category)))];
+  let activeCategory = 'すべて';
+
+  function renderGrid(): void {
+    if (!gridContainer) return;
+    gridContainer.innerHTML = '';
+
+    const filtered = activeCategory === 'すべて'
+      ? docs
+      : docs.filter((d) => d.category === activeCategory);
+
+    for (const doc of filtered) {
+      const card = document.createElement('div');
+      card.className = 'corpus-item-card';
+      card.title = 'クリックしてこの文書で検索';
+      card.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+          <span class="tag-badge" style="margin: 0; font-size: 0.7rem;">${escapeHtml(doc.category)}</span>
+        </div>
+        <h4 class="corpus-item-title">${escapeHtml(doc.title)}</h4>
+        <p class="corpus-item-text">${escapeHtml(doc.text)}</p>
+      `;
+      card.addEventListener('click', () => {
+        onSelect(doc.title);
+      });
+      gridContainer.appendChild(card);
+    }
+  }
+
+  // フィルターボタンの描画
+  filtersContainer.innerHTML = '';
+  for (const cat of categories) {
+    const btn = document.createElement('button');
+    btn.className = `filter-btn ${cat === activeCategory ? 'active' : ''}`;
+    btn.textContent = cat;
+    btn.addEventListener('click', () => {
+      activeCategory = cat;
+      const allBtns = filtersContainer.querySelectorAll('.filter-btn');
+      allBtns.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderGrid();
+    });
+    filtersContainer.appendChild(btn);
+  }
+
+  renderGrid();
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 if (document.readyState === 'loading') {
