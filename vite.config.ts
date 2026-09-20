@@ -19,13 +19,5 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
-    rollupOptions: {
-      external: ['onnxruntime-web'],
-      output: {
-        globals: {
-          'onnxruntime-web': 'ort',
-        },
-      },
-    },
   },
 });

@@ -5,20 +5,19 @@
  * 参照: chottokun/ruri_with_sentencepiece_lite (dist_assets/ruri_v3_lite.py)
  */
 
-import * as ort from 'onnxruntime-web';
+import type * as ort from 'onnxruntime-web';
 import { EMBED_DIM, HF_CONFIG, PREFIXES } from '../config';
 import { fetchWithCache } from './hf_loader';
 import { SpmTokenizer } from './tokenizer';
 
-// グローバル (CDN) の ort を優先利用し、Web Worker 内での Vite メインバンドル巻き込みバグを防止
+// ブラウザのグローバル (index.html の CDN script) から ort を安全に取得
 function getOrt(): typeof ort {
-  return (typeof window !== 'undefined' && (window as any).ort) || ort;
+  const globalOrt = (typeof window !== 'undefined' && (window as any).ort);
+  if (!globalOrt) {
+    throw new Error('ONNX Runtime Web (ort) が読み込まれていません。CDNスクリプトのロード状態を確認してください。');
+  }
+  return globalOrt;
 }
-
-// GitHub Pages (サブディレクトリ) での WASM 解決とハング防止設定
-const ortInstance = getOrt();
-ortInstance.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
-ortInstance.env.wasm.numThreads = 1; // COOP/COEPのマルチスレッド競合によるハングを完全に防止
 
 export interface ModelInitProgress {
   stage: 'downloading_tokenizer' | 'downloading_model' | 'creating_session' | 'ready';
@@ -59,6 +58,11 @@ export class EmbeddingModel {
    * モデルとトークナイザーを初期化します。
    */
   async init(onProgress?: (progress: ModelInitProgress) => void): Promise<ExecutionDevice> {
+    // 0. ONNX Runtime Web 環境設定
+    const ortInstance = getOrt();
+    ortInstance.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
+    ortInstance.env.wasm.numThreads = 1;
+
     // 1. デバイスの判定
     const hasWebGPU = await EmbeddingModel.checkWebGPUSupport();
     this.device = hasWebGPU ? 'webgpu' : 'wasm';
