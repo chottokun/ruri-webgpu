@@ -1,9 +1,15 @@
 import { StorageManager } from './storage';
+import { computeCosineSimilarity, computeHybridScore, ExtractedSentence } from './utils';
 
 const storage = new StorageManager();
 
 let isModelReady = false;
+let currentMode: 'global' | 'inpage' = 'global';
+let inPageSentences: { id: string, text: string, embedding?: Float32Array }[] = [];
+let queryEmbeddingCache: { query: string, embedding: Float32Array } | null = null;
+let analysisInProgress = false;
 
+// DOM Elements
 const statusBadge = document.getElementById('status-badge')!;
 const progressContainer = document.getElementById('progress-container')!;
 const appContent = document.getElementById('app-content')!;
@@ -14,6 +20,37 @@ const resultsContainer = document.getElementById('results-container')!;
 const searchSpinner = document.getElementById('search-spinner')!;
 const indexBtn = document.getElementById('index-current-page') as HTMLButtonElement;
 const hybridCheckbox = document.getElementById('hybrid-checkbox') as HTMLInputElement | null;
+
+// Mode Toggle Elements
+const modeGlobalBtn = document.getElementById('mode-global')!;
+const modeInpageBtn = document.getElementById('mode-inpage')!;
+const globalSection = document.getElementById('global-section')!;
+const inpageSection = document.getElementById('inpage-section')!;
+
+// In-Page Elements
+const analyzePageBtn = document.getElementById('analyze-page') as HTMLButtonElement;
+const inpageCountEl = document.getElementById('inpage-count')!;
+const analyzeProgress = document.getElementById('analyze-progress')!;
+const analyzeProgressText = document.getElementById('analyze-progress-text')!;
+
+// Mode toggling
+modeGlobalBtn.addEventListener('click', () => {
+    currentMode = 'global';
+    modeGlobalBtn.classList.add('active');
+    modeInpageBtn.classList.remove('active');
+    globalSection.classList.add('active');
+    inpageSection.classList.remove('active');
+    performSearch(searchInput.value);
+});
+
+modeInpageBtn.addEventListener('click', () => {
+    currentMode = 'inpage';
+    modeInpageBtn.classList.add('active');
+    modeGlobalBtn.classList.remove('active');
+    inpageSection.classList.add('active');
+    globalSection.classList.remove('active');
+    performSearch(searchInput.value);
+});
 
 // ハイブリッド検索トグルの切り替え時に再検索を実行
 if (hybridCheckbox) {
@@ -84,21 +121,15 @@ async function embedText(text: string, isQuery: boolean = false): Promise<Float3
    return new Float32Array(response.embedding);
 }
 
-// Compute cosine similarity between two unit vectors
-function cosineSimilarity(vecA: Float32Array, vecB: Float32Array): number {
-  let dotProduct = 0;
-  for (let i = 0; i < vecA.length; i++) {
-    dotProduct += vecA[i] * vecB[i];
-  }
-  return dotProduct;
-}
-
 interface SearchResultItem {
-  article: any;
+  id: string; // url or sentenceId
+  title: string;
+  url: string;
   score: number;
   semanticSimilarity: number;
   keywordMatched: boolean;
   matchTarget?: 'title' | 'text';
+  isInPage?: boolean;
 }
 
 async function performSearch(query: string) {
@@ -108,49 +139,75 @@ async function performSearch(query: string) {
     }
     
     searchSpinner.classList.remove('hidden');
-    resultsContainer.innerHTML = '';
     
     try {
         const start = performance.now();
-        const queryEmbedding = await embedText(query, true);
+        
+        let queryEmbedding: Float32Array;
+        if (queryEmbeddingCache && queryEmbeddingCache.query === query) {
+            queryEmbedding = queryEmbeddingCache.embedding;
+        } else {
+            queryEmbedding = await embedText(query, true);
+            queryEmbeddingCache = { query, embedding: queryEmbedding };
+        }
+        
         const embedLatency = performance.now() - start;
-        
-        const articles = await storage.getAllArticles();
-        
         const searchStart = performance.now();
         const isHybrid = hybridCheckbox ? hybridCheckbox.checked : true;
-        const searchPattern = query.trim().toLowerCase();
+        
+        let results: SearchResultItem[] = [];
 
-        const results: SearchResultItem[] = articles.map(article => {
-            const similarity = cosineSimilarity(queryEmbedding, article.embedding);
-            let finalScore = similarity;
-            let keywordMatched = false;
-            let matchTarget: 'title' | 'text' | undefined = undefined;
+        if (currentMode === 'global') {
+            const articles = await storage.getAllArticles();
+            results = articles.map(article => {
+                const similarity = computeCosineSimilarity(queryEmbedding, article.embedding);
+                const titleMatch = computeHybridScore(similarity, article.title || '', query, isHybrid);
+                const textMatch = computeHybridScore(similarity, article.text || '', query, isHybrid);
+                
+                let finalScore = similarity;
+                let keywordMatched = false;
+                let matchTarget: 'title' | 'text' | undefined = undefined;
 
-            // local-ai-grep 仕様: --hybrid によるキーワード完全・部分一致スコアブースト
-            if (isHybrid && searchPattern.length > 0) {
-                const titleLower = (article.title || '').toLowerCase();
-                const textLower = (article.text || '').toLowerCase();
-
-                if (titleLower.includes(searchPattern)) {
-                    finalScore += 0.25; // タイトル一致ボーナス
+                if (titleMatch.matched) {
+                    finalScore = titleMatch.score;
                     keywordMatched = true;
                     matchTarget = 'title';
-                } else if (textLower.includes(searchPattern)) {
-                    finalScore += 0.25; // 本文一致ボーナス (local-ai-grep準拠で0.25)
+                } else if (textMatch.matched) {
+                    finalScore = textMatch.score;
                     keywordMatched = true;
                     matchTarget = 'text';
                 }
-            }
 
-            return {
-                article,
-                score: finalScore,
-                semanticSimilarity: similarity,
-                keywordMatched,
-                matchTarget
-            };
-        });
+                return {
+                    id: article.url,
+                    title: article.title,
+                    url: article.url,
+                    score: finalScore,
+                    semanticSimilarity: similarity,
+                    keywordMatched,
+                    matchTarget
+                };
+            });
+        } else {
+            // In-page mode
+            results = inPageSentences
+                .filter(sent => sent.embedding)
+                .map(sent => {
+                    const similarity = computeCosineSimilarity(queryEmbedding, sent.embedding!);
+                    const match = computeHybridScore(similarity, sent.text, query, isHybrid);
+                    
+                    return {
+                        id: sent.id,
+                        title: sent.text,
+                        url: '',
+                        score: match.score,
+                        semanticSimilarity: similarity,
+                        keywordMatched: match.matched,
+                        matchTarget: 'text' as const,
+                        isInPage: true
+                    };
+                });
+        }
         
         results.sort((a, b) => b.score - a.score);
         
@@ -162,7 +219,9 @@ async function performSearch(query: string) {
         console.error(err);
         resultsContainer.innerHTML = `<div style="color: var(--error)">エラー: ${err.message}</div>`;
     } finally {
-        searchSpinner.classList.add('hidden');
+        if (!analysisInProgress) { // Keep spinner if streaming analysis is happening
+            searchSpinner.classList.add('hidden');
+        }
     }
 }
 
@@ -173,26 +232,44 @@ function displayResults(results: SearchResultItem[]) {
     }
     
     resultsContainer.innerHTML = '';
-    for (const { article, score, semanticSimilarity, keywordMatched, matchTarget } of results) {
+    for (const item of results) {
         const card = document.createElement('div');
         card.className = 'result-card';
 
-        const boostBadge = keywordMatched
-            ? `<span class="hybrid-badge">一致 +0.25 (${matchTarget === 'title' ? 'タイトル' : '本文'})</span>`
+        const boostBadge = item.keywordMatched
+            ? `<span class="hybrid-badge">一致 +0.25 (${item.matchTarget === 'title' ? 'タイトル' : '本文'})</span>`
             : '';
 
-        card.innerHTML = `
-            <div class="result-title">${escapeHtml(article.title)}</div>
-            <div class="result-url">${escapeHtml(article.url)}</div>
-            <div class="result-score">
-                スコア: ${score.toFixed(4)}
-                <span style="color: var(--text-muted); font-size: 0.75rem; margin-left: 6px;">(類似度: ${semanticSimilarity.toFixed(4)})</span>
-                ${boostBadge}
-            </div>
-        `;
-        card.addEventListener('click', () => {
-            chrome.tabs.create({ url: article.url });
-        });
+        if (item.isInPage) {
+            card.innerHTML = `
+                <div class="result-title" style="white-space: normal; line-height: 1.4;">${escapeHtml(item.title)}</div>
+                <div class="result-score">
+                    スコア: ${item.score.toFixed(4)}
+                    <span style="color: var(--text-muted); font-size: 0.75rem; margin-left: 6px;">(類似度: ${item.semanticSimilarity.toFixed(4)})</span>
+                    ${boostBadge}
+                </div>
+            `;
+            card.addEventListener('click', async () => {
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                if (tab && tab.id) {
+                    chrome.tabs.sendMessage(tab.id, { type: 'HIGHLIGHT_SENTENCE', sentenceId: item.id });
+                }
+            });
+        } else {
+            card.innerHTML = `
+                <div class="result-title">${escapeHtml(item.title)}</div>
+                <div class="result-url">${escapeHtml(item.url)}</div>
+                <div class="result-score">
+                    スコア: ${item.score.toFixed(4)}
+                    <span style="color: var(--text-muted); font-size: 0.75rem; margin-left: 6px;">(類似度: ${item.semanticSimilarity.toFixed(4)})</span>
+                    ${boostBadge}
+                </div>
+            `;
+            card.addEventListener('click', () => {
+                chrome.tabs.create({ url: item.id });
+            });
+        }
+        
         resultsContainer.appendChild(card);
     }
 }
@@ -214,12 +291,12 @@ searchInput.addEventListener('input', () => {
     }, 300);
 });
 
+// Global Indexing
 indexBtn.addEventListener('click', async () => {
     try {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (!tab || !tab.id || !tab.url) return;
         
-        // Ignore restricted URLs
         if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://')) {
             alert('このページはインデックスできません。');
             return;
@@ -262,6 +339,87 @@ indexBtn.addEventListener('click', async () => {
         alert(`エラー: ${err.message}`);
         indexBtn.disabled = false;
         indexBtn.innerText = '現在のページをインデックス';
+    }
+});
+
+// In-Page Analysis
+analyzePageBtn.addEventListener('click', async () => {
+    try {
+        if (analysisInProgress) return;
+        
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab || !tab.id || !tab.url) return;
+        
+        if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://')) {
+            alert('このページは解析できません。');
+            return;
+        }
+
+        analysisInProgress = true;
+        analyzePageBtn.disabled = true;
+        analyzeProgress.classList.remove('hidden');
+        searchSpinner.classList.remove('hidden');
+        inPageSentences = [];
+        
+        // Ensure content script is injected
+        await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['content.js']
+        });
+        
+        // Request extraction
+        analyzeProgressText.innerText = '文を抽出中...';
+        const response = await chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_SENTENCES' });
+        
+        if (!response || !response.success || !response.sentences) {
+            throw new Error('文の抽出に失敗しました');
+        }
+        
+        const extracted: ExtractedSentence[] = response.sentences;
+        inpageCountEl.innerText = `抽出された文: ${extracted.length}`;
+        inPageSentences = extracted.map(s => ({ ...s }));
+        
+        // Stream embeddings
+        let embeddedCount = 0;
+        
+        for (let i = 0; i < inPageSentences.length; i++) {
+            if (!analysisInProgress) break; // Allow cancellation if needed
+            
+            analyzeProgressText.innerText = `埋め込み生成中... (${i + 1}/${inPageSentences.length})`;
+            
+            // Generate embedding
+            const embedding = await embedText(inPageSentences[i].text, false);
+            inPageSentences[i].embedding = embedding;
+            embeddedCount++;
+            
+            // If user has a query, update results periodically
+            if (searchInput.value.trim() && i % 5 === 0) {
+                performSearch(searchInput.value);
+            }
+        }
+        
+        analyzeProgressText.innerText = '解析完了';
+        
+        // Final search update
+        if (searchInput.value.trim()) {
+            performSearch(searchInput.value);
+        }
+        
+        setTimeout(() => {
+            analyzeProgress.classList.add('hidden');
+            analyzePageBtn.disabled = false;
+            analyzePageBtn.innerText = '再解析する';
+            analysisInProgress = false;
+            searchSpinner.classList.add('hidden');
+        }, 2000);
+        
+    } catch (err: any) {
+        console.error(err);
+        alert(`エラー: ${err.message}`);
+        analysisInProgress = false;
+        analyzePageBtn.disabled = false;
+        analyzeProgress.classList.add('hidden');
+        searchSpinner.classList.add('hidden');
     }
 });
 

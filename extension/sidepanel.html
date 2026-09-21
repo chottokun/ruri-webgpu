@@ -5,6 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ruri-webgpu 検索パネル</title>
     <link rel="stylesheet" href="./sidepanel.css" />
+    <style>
+      .mode-toggle {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+        background: var(--panel-bg);
+        padding: 4px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+      }
+      .mode-btn {
+        flex: 1;
+        padding: 6px;
+        text-align: center;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        transition: all 0.2s;
+        border: none;
+        background: transparent;
+      }
+      .mode-btn.active {
+        background: var(--primary);
+        color: white;
+      }
+      .mode-section {
+        display: none;
+      }
+      .mode-section.active {
+        display: block;
+      }
+    </style>
   </head>
   <body>
     <div class="container">
@@ -18,9 +51,32 @@
         <div id="progress-container" class="progress"></div>
 
         <div id="app-content" class="hidden">
-           <button id="index-current-page" class="btn btn-primary" style="margin-bottom: 1rem; width: 100%;">
-              現在のページをインデックス
-           </button>
+           
+           <div class="mode-toggle">
+             <button id="mode-global" class="mode-btn active">全体検索</button>
+             <button id="mode-inpage" class="mode-btn">ページ内検索</button>
+           </div>
+
+           <div id="global-section" class="mode-section active">
+             <button id="index-current-page" class="btn btn-primary" style="margin-bottom: 1rem; width: 100%;">
+                現在のページをインデックス
+             </button>
+             <div class="stats">
+               <span id="index-count">インデックス数: 0</span>
+             </div>
+           </div>
+
+           <div id="inpage-section" class="mode-section">
+             <button id="analyze-page" class="btn btn-primary" style="margin-bottom: 1rem; width: 100%;">
+                ページ内の文を解析
+             </button>
+             <div class="stats">
+               <span id="inpage-count">抽出された文: 0</span>
+             </div>
+             <div id="analyze-progress" class="progress hidden" style="margin-bottom: 1rem;">
+               <div id="analyze-progress-text">準備中...</div>
+             </div>
+           </div>
            
            <div class="search-box">
              <input type="text" id="search-input" placeholder="意味で検索..." autocomplete="off" />
@@ -34,7 +90,6 @@
            </div>
            
            <div class="stats">
-             <span id="index-count">インデックス数: 0</span>
              <span id="latency-stats"></span>
            </div>
 
