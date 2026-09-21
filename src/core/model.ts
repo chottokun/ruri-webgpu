@@ -60,7 +60,9 @@ export class EmbeddingModel {
   async init(onProgress?: (progress: ModelInitProgress) => void): Promise<ExecutionDevice> {
     // 0. ONNX Runtime Web 環境設定
     const ortInstance = getOrt();
-    ortInstance.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
+    if (!ortInstance.env.wasm.wasmPaths) {
+      ortInstance.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
+    }
     ortInstance.env.wasm.numThreads = 1;
 
     // 1. デバイスの判定

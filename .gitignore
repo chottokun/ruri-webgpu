@@ -17,6 +17,7 @@
 # 依存・ビルド成果物
 node_modules/
 dist/
+dist-extension/
 dist-ssr/
 
 # エディタ・OS

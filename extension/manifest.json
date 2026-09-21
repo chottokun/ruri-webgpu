@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "ruri-webgpu 意味検索",
+  "version": "0.1.0",
+  "description": "閲覧中のページをインデックスし、意味で検索できる WebGPU セマンティック検索拡張機能",
+  "permissions": [
+    "offscreen",
+    "storage",
+    "activeTab",
+    "scripting",
+    "sidePanel"
+  ],
+  "background": {
+    "service_worker": "service_worker.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "検索パネルを開く"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}

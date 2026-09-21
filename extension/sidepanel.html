@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ruri-webgpu 検索パネル</title>
+    <link rel="stylesheet" href="./sidepanel.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>ruri-webgpu</h1>
+        <p class="subtitle">意味検索</p>
+        <div id="status-badge" class="badge">初期化中...</div>
+      </header>
+
+      <main>
+        <div id="progress-container" class="progress"></div>
+
+        <div id="app-content" class="hidden">
+           <button id="index-current-page" class="btn btn-primary" style="margin-bottom: 1rem; width: 100%;">
+              現在のページをインデックス
+           </button>
+           
+           <div class="search-box">
+             <input type="text" id="search-input" placeholder="意味で検索..." autocomplete="off" />
+           </div>
+
+           <div class="search-options">
+             <label class="hybrid-toggle">
+               <input type="checkbox" id="hybrid-checkbox" checked />
+               <span>ハイブリッド検索 (+0.25 キーワード一致ブースト)</span>
+             </label>
+           </div>
+           
+           <div class="stats">
+             <span id="index-count">インデックス数: 0</span>
+             <span id="latency-stats"></span>
+           </div>
+
+           <div id="search-spinner" class="spinner hidden"></div>
+           
+           <div id="results-container" class="results">
+             <!-- Results will be populated here -->
+           </div>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="./sidepanel.ts"></script>
+  </body>
+</html>
