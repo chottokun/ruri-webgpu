@@ -1,11 +1,6 @@
 /// <reference types="chrome"/>
 
-// Set up the side panel on extension installation or update
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error);
-});
-
-// We need a mechanism to coordinate messages between the sidepanel, content script, and the offscreen document
+// We need a mechanism to coordinate messages between the sidepanel/overlay, content script, and the offscreen document
 let creatingOffscreenDocument: Promise<void> | null = null;
 let offscreenReady = false;
 
@@ -39,7 +34,6 @@ chrome.runtime.onMessage.addListener((message) => {
 
 // Check if offscreen doc exists
 async function hasDocument(path: string) {
-  // Chrome 116+ では chrome.runtime.getContexts が推奨
   if ('getContexts' in chrome.runtime) {
     try {
       const contexts = await (chrome.runtime as any).getContexts({
@@ -48,11 +42,10 @@ async function hasDocument(path: string) {
       });
       return contexts.length > 0;
     } catch {
-      // 失敗時は clients.matchAll へフォールバック
+      // fallback
     }
   }
 
-  // 従来の clients.matchAll フォールバック
   if (typeof (self as any).clients !== 'undefined') {
     const matchedClients = await (self as any).clients.matchAll();
     for (const client of matchedClients) {
@@ -73,7 +66,6 @@ async function ensureOffscreenReady() {
   
   await setupOffscreenDocument('offscreen.html');
   if (!offscreenReady) {
-    // Wait for the ready message
     await new Promise<void>((resolve) => {
       const listener = (message: any) => {
         if (message.type === 'OFFSCREEN_READY') {
@@ -83,23 +75,21 @@ async function ensureOffscreenReady() {
         }
       };
       chrome.runtime.onMessage.addListener(listener);
-      // Timeout to avoid hanging forever
       setTimeout(() => {
         chrome.runtime.onMessage.removeListener(listener);
-        resolve(); // Continue anyway and let errors be handled down the line
+        resolve(); 
       }, 5000);
     });
   }
 }
 
-// Listen for messages from sidepanel or content script
+// Listen for messages from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'OFFSCREEN_READY') {
     offscreenReady = true;
-    return false; // No async response needed
+    return false;
   }
 
-  // Requests destined for the offscreen document
   if (message.type === 'INIT_MODEL' || message.type === 'EMBED_TEXT') {
     (async () => {
       try {
@@ -113,9 +103,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: false, error: error.message });
       }
     })();
-    return true; // Keep the message channel open for sendResponse
+    return true;
   }
 
-  // Context menu or other background actions could be handled here
   return false;
+});
+
+// Send a message to content script to toggle overlay on action click
+chrome.action.onClicked.addListener(async (tab) => {
+  if (tab.id) {
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }));
+      }
+    });
+  }
 });

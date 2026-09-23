@@ -3,7 +3,6 @@ import { resolve } from 'path';
 import fs from 'fs';
 import path from 'path';
 
-// Plugin to copy ONNX Runtime Web WASM and JS files to the dist directory
 function copyOrtAssetsPlugin() {
   return {
     name: 'copy-ort-assets',
@@ -15,7 +14,6 @@ function copyOrtAssetsPlugin() {
         fs.mkdirSync(distAssetsPath, { recursive: true });
       }
 
-      // We need ort.all.min.js and all .wasm files
       const filesToCopy = fs.readdirSync(ortDistPath).filter(file => 
         file === 'ort.all.min.js' || file.endsWith('.wasm')
       );
@@ -52,19 +50,18 @@ export default defineConfig({
     target: 'esnext',
     rollupOptions: {
       input: {
-        sidepanel: resolve(__dirname, 'sidepanel.html'),
         offscreen: resolve(__dirname, 'offscreen.html'),
         service_worker: resolve(__dirname, 'service_worker.ts'),
         content: resolve(__dirname, 'content.ts'),
+        overlay: resolve(__dirname, 'overlay.css'),
       },
       output: {
         entryFileNames: '[name].js',
         chunkFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash].[ext]',
+        assetFileNames: 'assets/[name].[ext]',
       },
     },
   },
-  // Ensure we can resolve src/core properly
   resolve: {
     alias: {
       '@src': resolve(__dirname, '../src'),

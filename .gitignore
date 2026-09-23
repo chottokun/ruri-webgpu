@@ -30,3 +30,6 @@ npm-debug.log*
 
 # 
 .agents/skills
+scratch/
+__pycache__/
+converted_tokenizer/

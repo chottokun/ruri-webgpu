@@ -39,7 +39,7 @@ describe('Chrome Extension E2E Test', () => {
     const fs = await import('fs');
     expect(fs.existsSync(path.join(EXTENSION_PATH, 'manifest.json'))).toBe(true);
     expect(fs.existsSync(path.join(EXTENSION_PATH, 'service_worker.js'))).toBe(true);
-    expect(fs.existsSync(path.join(EXTENSION_PATH, 'sidepanel.html'))).toBe(true);
+    //
     expect(fs.existsSync(path.join(EXTENSION_PATH, 'offscreen.html'))).toBe(true);
     expect(fs.existsSync(path.join(EXTENSION_PATH, 'content.js'))).toBe(true);
   });
