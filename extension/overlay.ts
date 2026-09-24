@@ -4,33 +4,69 @@ let isOverlayOpen = false;
 let overlayElement: HTMLElement | null = null;
 let shadowRoot: ShadowRoot | null = null;
 
-// モデルとページ内解析の状態管理
+// モデルと検索状態
 let modelReady = false;
 let modelInitializing = false;
 let inPageSentences: (ExtractedSentence & { embedding?: Float32Array })[] = [];
 let currentSearchAbortId = 0;
-let selectedResultIndex = 0;
-let currentResults: {
+let currentIndex = -1;
+let matchedResults: {
   id: string;
   text: string;
   score: number;
   semanticSimilarity: number;
   keywordMatched: boolean;
-  matchTarget: 'title' | 'text';
 }[] = [];
 
-// ShadowRoot 内の DOM 要素
-let searchInput: HTMLInputElement;
-let resultsContainer: HTMLElement;
-let statusText: HTMLElement;
-let closeBtn: HTMLElement;
+// DOM Elements inside ShadowRoot
+let findInput: HTMLInputElement;
+let countBadge: HTMLElement;
+let prevBtn: HTMLButtonElement;
+let nextBtn: HTMLButtonElement;
+let closeBtn: HTMLButtonElement;
+let dropdown: HTMLElement;
+let statusBanner: HTMLElement;
+
+/**
+ * 拡張機能コンテキストが有効か判定
+ */
+function isExtensionValid(): boolean {
+  try {
+    return !!(typeof chrome !== 'undefined' && chrome?.runtime && chrome.runtime.id);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 安全な sendMessage ラッパー
+ */
+async function safeSendMessage(message: any): Promise<any> {
+  if (!isExtensionValid()) {
+    throw new Error('拡張機能が更新されました。ページ(F5)を再読み込みしてください。');
+  }
+  try {
+    return await chrome.runtime.sendMessage(message);
+  } catch (err: any) {
+    if (err?.message?.includes('Extension context invalidated')) {
+      throw new Error('拡張機能が更新されました。ページ(F5)を再読み込みしてください。');
+    }
+    throw err;
+  }
+}
 
 export function initOverlay() {
+  // 古いオーバーレイ要素がDOMに残っていれば全削除（拡張機能リロード時の重複・残存防止）
+  const oldElements = document.querySelectorAll('#ruri-overlay-root');
+  oldElements.forEach(el => el.remove());
+
   document.addEventListener('keydown', (e) => {
-    // Cmd+K または Ctrl+K でオーバーレイをトグル
-    if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
-      e.preventDefault();
-      toggleOverlay();
+    // Ctrl+F / Cmd+F または Ctrl+K / Cmd+K でスマートページ内検索バーを起動
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F' || e.key === 'k' || e.key === 'K')) {
+      if (!e.shiftKey) {
+        e.preventDefault();
+        toggleOverlay(true);
+      }
     }
     // Esc で閉じる
     if (e.key === 'Escape' && isOverlayOpen) {
@@ -44,19 +80,19 @@ export function toggleOverlay(force?: boolean) {
   isOverlayOpen = force !== undefined ? force : !isOverlayOpen;
 
   if (isOverlayOpen) {
-    if (!overlayElement) {
+    if (!overlayElement || !document.body.contains(overlayElement)) {
       createOverlay();
     }
     overlayElement!.classList.remove('hidden');
     setTimeout(() => {
-      searchInput?.focus();
-      searchInput?.select();
-    }, 50);
+      findInput?.focus();
+      findInput?.select();
+    }, 40);
 
-    // ページ内の文章抽出とマーキング準備（未抽出の場合）
+    // ページ内文章の抽出＆DOMタグ付け
     preparePageSentences();
 
-    // モデルが未準備の場合はバックグラウンド初期化
+    // バックグラウンドでモデル初期化
     if (!modelReady && !modelInitializing) {
       initModel();
     }
@@ -68,6 +104,10 @@ export function toggleOverlay(force?: boolean) {
 }
 
 function createOverlay() {
+  // 念のため再チェックして既存をクリーンアップ
+  const existing = document.getElementById('ruri-overlay-root');
+  if (existing) existing.remove();
+
   overlayElement = document.createElement('div');
   overlayElement.id = 'ruri-overlay-root';
   overlayElement.className = 'hidden';
@@ -84,36 +124,31 @@ function createOverlay() {
   }
 
   const container = document.createElement('div');
-  container.className = 'ruri-overlay-container';
+  container.className = 'ruri-find-container';
 
   container.innerHTML = `
-    <div class="ruri-overlay-header">
-      <div class="ruri-overlay-logo">
-        <h1>ruri</h1>
-        <span class="ruri-badge">WebGPU</span>
+    <div class="ruri-find-bar">
+      <div class="ruri-find-logo" title="ruri: WebGPU 意味検索">
+        <span class="ruri-logo-text">ruri</span>
       </div>
-      <div class="ruri-overlay-search-box">
+      <div class="ruri-find-input-wrapper">
         <input 
           type="text" 
-          id="ruri-search" 
-          placeholder="ページ内を意味でストリーム検索 (Enterで移動)..." 
+          id="ruri-find-input" 
+          placeholder="意味でページ内検索..." 
           autocomplete="off" 
           spellcheck="false"
         />
       </div>
-      <button class="ruri-overlay-close" id="ruri-close" title="閉じる (Esc)">✕</button>
-    </div>
-    <div class="ruri-overlay-controls">
-      <div class="ruri-overlay-status" id="ruri-status">準備中...</div>
-      <div class="ruri-overlay-hints">
-        <span><kbd>↑</kbd><kbd>↓</kbd> 選択</span>
-        <span><kbd>Enter</kbd> 移動 &amp; マーク</span>
-        <span><kbd>Esc</kbd> 閉じる</span>
+      <div class="ruri-find-count" id="ruri-find-count">-/-</div>
+      <div class="ruri-find-actions">
+        <button class="ruri-find-btn" id="ruri-prev-btn" title="前へ (Shift+Enter)">▲</button>
+        <button class="ruri-find-btn" id="ruri-next-btn" title="次へ (Enter)">▼</button>
+        <button class="ruri-find-btn" id="ruri-close-btn" title="閉じる (Esc)">✕</button>
       </div>
     </div>
-    <div class="ruri-overlay-results" id="ruri-results">
-      <div class="ruri-overlay-empty">キーワードや探したい文脈を入力してください</div>
-    </div>
+    <div class="ruri-status-banner hidden" id="ruri-status-banner"></div>
+    <div class="ruri-find-dropdown hidden" id="ruri-find-dropdown"></div>
   `;
 
   shadowRoot.appendChild(linkEl);
@@ -121,263 +156,277 @@ function createOverlay() {
   document.body.appendChild(overlayElement);
 
   // 要素バインド
-  searchInput = shadowRoot.getElementById('ruri-search') as HTMLInputElement;
-  resultsContainer = shadowRoot.getElementById('ruri-results') as HTMLElement;
-  statusText = shadowRoot.getElementById('ruri-status') as HTMLElement;
-  closeBtn = shadowRoot.getElementById('ruri-close') as HTMLElement;
+  findInput = shadowRoot.getElementById('ruri-find-input') as HTMLInputElement;
+  countBadge = shadowRoot.getElementById('ruri-find-count') as HTMLElement;
+  prevBtn = shadowRoot.getElementById('ruri-prev-btn') as HTMLButtonElement;
+  nextBtn = shadowRoot.getElementById('ruri-next-btn') as HTMLButtonElement;
+  closeBtn = shadowRoot.getElementById('ruri-close-btn') as HTMLButtonElement;
+  dropdown = shadowRoot.getElementById('ruri-find-dropdown') as HTMLElement;
+  statusBanner = shadowRoot.getElementById('ruri-status-banner') as HTMLElement;
 
-  // イベントリスナー
+  // イベントハンドラ
   closeBtn.addEventListener('click', () => toggleOverlay(false));
+  prevBtn.addEventListener('click', () => navigate(-1));
+  nextBtn.addEventListener('click', () => navigate(1));
 
   let debounceTimer: any;
-  searchInput.addEventListener('input', () => {
+  findInput.addEventListener('input', () => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-      startStreamSearch(searchInput.value.trim());
-    }, 200);
+      startStreamSearch(findInput.value.trim());
+    }, 180);
   });
 
-  // キーボードナビゲーション（Enter / 矢印キー）
-  searchInput.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowDown') {
+  // Enter / Shift+Enter での移動
+  findInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
       e.preventDefault();
-      if (currentResults.length > 0) {
-        selectedResultIndex = (selectedResultIndex + 1) % currentResults.length;
-        updateSelectedCard();
+      if (e.shiftKey) {
+        navigate(-1);
+      } else {
+        navigate(1);
       }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      navigate(1);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      if (currentResults.length > 0) {
-        selectedResultIndex = (selectedResultIndex - 1 + currentResults.length) % currentResults.length;
-        updateSelectedCard();
-      }
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (currentResults.length > 0 && currentResults[selectedResultIndex]) {
-        jumpAndHighlight(currentResults[selectedResultIndex].id);
-      }
+      navigate(-1);
     }
   });
 }
 
-/**
- * ページ内の文章を抽出して DOM に data-ruri-id を付与（マーキング準備）
- */
+function showStatus(message: string, isError = false) {
+  if (!statusBanner) return;
+  if (!message) {
+    statusBanner.classList.add('hidden');
+    return;
+  }
+  statusBanner.classList.remove('hidden');
+  statusBanner.innerHTML = message;
+  statusBanner.style.color = isError ? '#f87171' : '#94a3b8';
+}
+
 function preparePageSentences() {
   if (inPageSentences.length === 0) {
     const extracted = extractAndSplitSentences(document);
     inPageSentences = extracted.map(s => ({ ...s }));
-    if (statusText) {
-      statusText.innerText = `${inPageSentences.length} 文を検出`;
-    }
   }
 }
 
-/**
- * モデル初期化
- */
 async function initModel() {
   if (modelReady || modelInitializing) return;
   modelInitializing = true;
   try {
-    statusText.innerHTML = '<span class="ruri-overlay-spinner"></span> WebGPU モデル初期化中...';
-    const response = await chrome.runtime.sendMessage({ type: 'INIT_MODEL' });
+    showStatus('<span class="ruri-spinner"></span> WebGPU モデル初期化中...');
+    const response = await safeSendMessage({ type: 'INIT_MODEL' });
     if (response && response.success) {
       modelReady = true;
-      statusText.innerText = `準備完了 (${inPageSentences.length} 文)`;
-      // すでに検索欄に入力があれば検索を開始
-      if (searchInput && searchInput.value.trim()) {
-        startStreamSearch(searchInput.value.trim());
+      showStatus('');
+      if (findInput && findInput.value.trim()) {
+        startStreamSearch(findInput.value.trim());
       }
     } else {
-      statusText.innerText = `エラー: ${response?.error || '初期化失敗'}`;
+      showStatus(`エラー: ${response?.error || '初期化失敗'}`, true);
     }
   } catch (err: any) {
-    statusText.innerText = `エラー: ${err.message}`;
+    showStatus(`⚠️ ${err.message}`, true);
   } finally {
     modelInitializing = false;
   }
 }
 
-/**
- * テキスト埋め込み API 呼び出し
- */
 async function embedText(text: string, isQuery = false): Promise<Float32Array> {
-  const response = await chrome.runtime.sendMessage({ type: 'EMBED_TEXT', text, isQuery });
+  const response = await safeSendMessage({ type: 'EMBED_TEXT', text, isQuery });
   if (response && response.success && response.embedding) {
     return new Float32Array(response.embedding);
   }
-  throw new Error(response?.error || 'テキスト埋め込みの生成に失敗しました');
+  throw new Error(response?.error || '埋め込み計算に失敗しました');
 }
 
 /**
- * ストリーミングセマンティック検索 (--hybrid 準拠)
+ * ページ内ストリーム検索 (--hybrid 準拠)
  */
 async function startStreamSearch(query: string) {
   const searchId = ++currentSearchAbortId;
 
   if (!query) {
-    currentResults = [];
-    resultsContainer.innerHTML = '<div class="ruri-overlay-empty">キーワードや探したい文脈を入力してください</div>';
-    statusText.innerText = `準備完了 (${inPageSentences.length} 文)`;
+    matchedResults = [];
+    currentIndex = -1;
+    updateCountUI();
+    dropdown.classList.add('hidden');
+    dropdown.innerHTML = '';
+    showStatus('');
     return;
   }
 
   if (!modelReady) {
-    statusText.innerHTML = '<span class="ruri-overlay-spinner"></span> モデル初期化を待機中...';
+    showStatus('<span class="ruri-spinner"></span> モデル準備待機中...');
     await initModel();
     if (!modelReady || searchId !== currentSearchAbortId) return;
   }
 
-  statusText.innerHTML = '<span class="ruri-overlay-spinner"></span> クエリをエンコード中...';
-  
+  showStatus('<span class="ruri-spinner"></span> クエリをベクトル化中...');
+
   let queryEmbedding: Float32Array;
   try {
     queryEmbedding = await embedText(query, true);
   } catch (err: any) {
-    statusText.innerText = `エラー: ${err.message}`;
+    showStatus(`⚠️ ${err.message}`, true);
     return;
   }
 
   if (searchId !== currentSearchAbortId) return;
 
-  // 1. すでに埋め込み計算済みの文章について即座にハイブリッドスコアを計算して初回表示
-  const scoredList: typeof currentResults = [];
+  // 1. キャッシュ済み文で即座にハイブリッド判定
   const uncomputedIndices: number[] = [];
+  const currentScored: typeof matchedResults = [];
 
   for (let i = 0; i < inPageSentences.length; i++) {
     const item = inPageSentences[i];
     if (item.embedding) {
       const sim = computeCosineSimilarity(queryEmbedding, item.embedding);
-      const hybrid = computeHybridScore(sim, item.text, query, true); // --hybrid
-      scoredList.push({
-        id: item.id,
-        text: item.text,
-        score: hybrid.score,
-        semanticSimilarity: sim,
-        keywordMatched: hybrid.matched,
-        matchTarget: 'text'
-      });
+      const hybrid = computeHybridScore(sim, item.text, query, true);
+      // 類似度 >= 0.65 または キーワード一致
+      if (hybrid.matched || hybrid.score >= 0.65) {
+        currentScored.push({
+          id: item.id,
+          text: item.text,
+          score: hybrid.score,
+          semanticSimilarity: sim,
+          keywordMatched: hybrid.matched
+        });
+      }
     } else {
       uncomputedIndices.push(i);
     }
   }
 
-  scoredList.sort((a, b) => b.score - a.score);
-  currentResults = scoredList;
-  selectedResultIndex = 0;
-  renderResults();
+  currentScored.sort((a, b) => b.score - a.score);
+  matchedResults = currentScored;
+  currentIndex = matchedResults.length > 0 ? 0 : -1;
+  updateCountUI();
+  renderDropdown();
+
+  // 最初のマッチに自動ジャンプ
+  if (currentIndex >= 0) {
+    jumpToCurrentMatch(false);
+  }
 
   if (uncomputedIndices.length === 0) {
-    statusText.innerText = `検索完了 (${currentResults.length} 件一致)`;
+    showStatus('');
     return;
   }
 
-  // 2. 未計算の文をストリーミング（逐次）でエンコードし、リアルタイムにスコア上位を更新
-  let computedCount = inPageSentences.length - uncomputedIndices.length;
+  // 2. 未計算の文をストリーミング（逐次）で計算しリアルタイム更新
+  let processed = inPageSentences.length - uncomputedIndices.length;
 
   for (const idx of uncomputedIndices) {
     if (searchId !== currentSearchAbortId || !isOverlayOpen) break;
 
     const item = inPageSentences[idx];
-    statusText.innerHTML = `<span class="ruri-overlay-spinner"></span> ストリーム解析中: ${computedCount + 1}/${inPageSentences.length} 文`;
+    showStatus(`<span class="ruri-spinner"></span> 解析中: ${processed + 1}/${inPageSentences.length} 文`);
 
     try {
       const emb = await embedText(item.text, false);
       item.embedding = emb;
-      computedCount++;
+      processed++;
 
       const sim = computeCosineSimilarity(queryEmbedding, emb);
-      const hybrid = computeHybridScore(sim, item.text, query, true); // --hybrid
+      const hybrid = computeHybridScore(sim, item.text, query, true);
 
-      currentResults.push({
-        id: item.id,
-        text: item.text,
-        score: hybrid.score,
-        semanticSimilarity: sim,
-        keywordMatched: hybrid.matched,
-        matchTarget: 'text'
-      });
+      if (hybrid.matched || hybrid.score >= 0.65) {
+        matchedResults.push({
+          id: item.id,
+          text: item.text,
+          score: hybrid.score,
+          semanticSimilarity: sim,
+          keywordMatched: hybrid.matched
+        });
+        matchedResults.sort((a, b) => b.score - a.score);
 
-      // スコア降順ソートして上位を再描画
-      currentResults.sort((a, b) => b.score - a.score);
-      renderResults();
+        if (currentIndex === -1 && matchedResults.length > 0) {
+          currentIndex = 0;
+          jumpToCurrentMatch(false);
+        }
+        updateCountUI();
+        renderDropdown();
+      }
     } catch (e) {
-      console.warn('Embedding failed for sentence:', item.text, e);
+      console.warn('Sentence embedding failed:', e);
     }
   }
 
   if (searchId === currentSearchAbortId) {
-    statusText.innerText = `解析完了 (上位 ${Math.min(currentResults.length, 10)} 件表示中)`;
+    showStatus('');
   }
 }
 
-/**
- * 検索結果一覧を描画
- */
-function renderResults() {
-  if (currentResults.length === 0) {
-    resultsContainer.innerHTML = '<div class="ruri-overlay-empty">該当する文章が見つかりませんでした</div>';
+function updateCountUI() {
+  if (matchedResults.length === 0) {
+    countBadge.innerText = '0/0';
+    countBadge.style.color = '#94a3b8';
+  } else {
+    countBadge.innerText = `${currentIndex + 1}/${matchedResults.length}`;
+    countBadge.style.color = '#818cf8';
+  }
+}
+
+function navigate(direction: number) {
+  if (matchedResults.length === 0) return;
+  currentIndex = (currentIndex + direction + matchedResults.length) % matchedResults.length;
+  updateCountUI();
+  renderDropdown();
+  jumpToCurrentMatch(true);
+}
+
+function jumpToCurrentMatch(flash = true) {
+  if (currentIndex < 0 || currentIndex >= matchedResults.length) return;
+  const match = matchedResults[currentIndex];
+  const el = document.querySelector(`[data-ruri-id="${match.id}"]`);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (flash) {
+      el.classList.remove('ruri-highlighted');
+      void (el as HTMLElement).offsetWidth;
+      el.classList.add('ruri-highlighted');
+    }
+  }
+}
+
+function renderDropdown() {
+  if (matchedResults.length === 0) {
+    dropdown.classList.add('hidden');
+    dropdown.innerHTML = '';
     return;
   }
 
-  resultsContainer.innerHTML = '';
-  const topResults = currentResults.slice(0, 15);
+  dropdown.classList.remove('hidden');
+  dropdown.innerHTML = '';
 
-  topResults.forEach((item, index) => {
-    const card = document.createElement('div');
-    card.className = `ruri-overlay-result-card ${index === selectedResultIndex ? 'selected' : ''}`;
-    card.dataset.index = String(index);
-
-    const boostBadge = item.keywordMatched
-      ? `<span class="ruri-overlay-hybrid-badge">キーワード一致 (+0.25)</span>`
-      : '';
-
-    card.innerHTML = `
-      <div class="ruri-overlay-result-title">${escapeHtml(item.text)}</div>
-      <div class="ruri-overlay-result-meta">
-        <span class="ruri-score">スコア: ${item.score.toFixed(3)}</span>
-        <span class="ruri-similarity">(コサイン類似度: ${item.semanticSimilarity.toFixed(3)})</span>
-        ${boostBadge}
+  matchedResults.slice(0, 8).forEach((item, idx) => {
+    const row = document.createElement('div');
+    row.className = `ruri-find-row ${idx === currentIndex ? 'active' : ''}`;
+    
+    const badge = item.keywordMatched ? '<span class="ruri-hybrid-tag">一致</span>' : '';
+    
+    row.innerHTML = `
+      <div class="ruri-find-row-text">${escapeHtml(item.text)}</div>
+      <div class="ruri-find-row-meta">
+        ${badge}
+        <span class="ruri-find-row-score">${item.score.toFixed(2)}</span>
       </div>
     `;
 
-    card.addEventListener('click', () => {
-      selectedResultIndex = index;
-      updateSelectedCard();
-      jumpAndHighlight(item.id);
+    row.addEventListener('click', () => {
+      currentIndex = idx;
+      updateCountUI();
+      renderDropdown();
+      jumpToCurrentMatch(true);
     });
 
-    resultsContainer.appendChild(card);
+    dropdown.appendChild(row);
   });
-}
-
-function updateSelectedCard() {
-  const cards = resultsContainer.querySelectorAll('.ruri-overlay-result-card');
-  cards.forEach((c, idx) => {
-    if (idx === selectedResultIndex) {
-      c.classList.add('selected');
-      c.scrollIntoView({ block: 'nearest' });
-    } else {
-      c.classList.remove('selected');
-    }
-  });
-}
-
-/**
- * 該当箇所へジャンプ＆インラインハイライト
- */
-function jumpAndHighlight(id: string) {
-  const targetEl = document.querySelector(`[data-ruri-id="${id}"]`);
-  if (targetEl) {
-    toggleOverlay(false);
-    targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-    // アニメーションを確実に再発火させる
-    targetEl.classList.remove('ruri-highlighted');
-    void (targetEl as HTMLElement).offsetWidth;
-    targetEl.classList.add('ruri-highlighted');
-  }
 }
 
 function escapeHtml(str: string): string {
