@@ -78,7 +78,7 @@ export class EmbeddingModel {
     }
 
     const tokenizerBuffer = await fetchWithCache(
-      HF_CONFIG.files.tokenizerModel,
+      HF_CONFIG.files.tokenizerJson,
       (loaded, total, speed) => {
         if (onProgress) {
           onProgress({

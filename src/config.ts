@@ -21,7 +21,7 @@ export const HF_CONFIG = {
   repoId: 'Chottokun/ruri-v3-30m-lite',
   baseUrl: 'https://huggingface.co/Chottokun/ruri-v3-30m-lite/resolve/main',
   files: {
-    tokenizerModel: 'tokenizer.model', // 標準 SentencePiece モデル (約1.5MB)
+    tokenizerJson: 'tokenizer.json', // tokenizer configuration
     tokenizerFb: 'ruri_v3_30m.spm.fb', // FlatBuffers 形式辞書 (4.57MB)
     modelFp16: 'model_fp16.onnx', // 71MB - WebGPU 用 (FP16)
     modelFp32: 'model.onnx', // 141MB - WASM CPU フォールバック用 (FP32)
