@@ -9,6 +9,20 @@
 import { EmbeddingModel } from '../src/core/model';
 import type * as ort from 'onnxruntime-web';
 
+// Extension環境では、offscreen.htmlでロードされたローカルortのWASMパスをローカルassetsに事前に設定
+const ortInstance = (window as any).ort;
+if (ortInstance) {
+  if (ortInstance.env) {
+    if (!ortInstance.env.wasm) {
+      ortInstance.env.wasm = {};
+    }
+    // 末尾にスラッシュを付与（ortの仕様）
+    const baseUrl = chrome.runtime.getURL('assets/ort/');
+    ortInstance.env.wasm.wasmPaths = baseUrl;
+  }
+}
+
+
 let model: EmbeddingModel | null = null;
 let isInitializing = false;
 let initPromise: Promise<string> | null = null;
@@ -29,14 +43,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             isInitializing = true;
             model = new EmbeddingModel();
             
-            // Extension環境では、offscreen.htmlでロードされたローカルortのWASMパスをローカルassetsに設定
-            const ortInstance = (window as any).ort;
-            if (!ortInstance) {
-              throw new Error('ONNX Runtime Web (ort) が読み込まれていません。');
-            }
-            if (ortInstance.env && ortInstance.env.wasm) {
-              ortInstance.env.wasm.wasmPaths = chrome.runtime.getURL('assets/ort/');
-            }
+
             
             initPromise = model.init((progress) => {
               chrome.runtime.sendMessage({
