@@ -5,67 +5,121 @@ export interface ExtractedSentence {
 
 export function extractAndSplitSentences(doc: Document): ExtractedSentence[] {
   const elements = doc.querySelectorAll('h1, h2, h3, h4, h5, h6, p, li');
-  const sentences: ExtractedSentence[] = [];
+  const sentencesMap = new Map<string, string>();
   
   // Use Intl.Segmenter for reliable Japanese sentence splitting
   const segmenter = new Intl.Segmenter('ja', { granularity: 'sentence' });
   let sentenceCounter = 0;
 
   elements.forEach((el) => {
-    const text = (el.textContent || '').trim();
-    if (!text) return;
-    
-    // We only process if it doesn't already have an ID (idempotent)
-    // For this implementation, we'll wrap sentences in spans to allow pinpoint highlighting,
-    // or if it's a single sentence, just tag the element itself.
-    
-    // As modifying the DOM heavily can break things, we'll instead do this:
-    // If an element has multiple sentences, we rewrite its innerHTML to wrap them in spans.
-    // If we already did this, we skip rewriting.
+    // If it's already processed, collect existing IDs
     if (el.hasAttribute('data-ruri-processed')) {
-      // Extract from spans or the element itself
       const spans = el.querySelectorAll('span[data-ruri-id]');
       if (spans.length > 0) {
         spans.forEach(span => {
-          sentences.push({ id: span.getAttribute('data-ruri-id')!, text: span.textContent || '' });
+          const id = span.getAttribute('data-ruri-id')!;
+          sentencesMap.set(id, (sentencesMap.get(id) || '') + (span.textContent || ''));
         });
       } else if (el.hasAttribute('data-ruri-id')) {
-        sentences.push({ id: el.getAttribute('data-ruri-id')!, text: text });
+        const id = el.getAttribute('data-ruri-id')!;
+        sentencesMap.set(id, (sentencesMap.get(id) || '') + (el.textContent || ''));
       }
       return;
     }
 
-    const segments = Array.from(segmenter.segment(text)).map(s => s.segment.trim()).filter(s => s.length > 0);
+    const walker = doc.createTreeWalker(el, 4 /* NodeFilter.SHOW_TEXT */, null);
+    const textNodes: { node: Text, start: number, end: number, text: string }[] = [];
+    let n: Text | null;
+    let offset = 0;
+    let combinedText = '';
     
+    while ((n = walker.nextNode() as Text)) {
+      const text = n.nodeValue || '';
+      textNodes.push({ node: n, start: offset, end: offset + text.length, text });
+      combinedText += text;
+      offset += text.length;
+    }
+    
+    if (combinedText.trim().length === 0) return;
+
+    const segments = Array.from(segmenter.segment(combinedText)).filter(s => s.segment.trim().length > 0);
     if (segments.length === 0) return;
-    
-    if (segments.length === 1) {
+
+    const indexToId = new Map<number, string>();
+    for (const seg of segments) {
       const id = `ruri-sent-${sentenceCounter++}`;
-      el.setAttribute('data-ruri-id', id);
+      indexToId.set(seg.index, id);
+      sentencesMap.set(id, seg.segment.trim());
+    }
+
+    let modified = false;
+
+    // To prevent modification during iteration, gather replacement actions
+    const replacements: { node: Text, fragment: DocumentFragment }[] = [];
+
+    for (const textNodeInfo of textNodes) {
+      const { node, start, end } = textNodeInfo;
+      const parent = node.parentNode;
+      if (!parent) continue;
+      
+      const overlappingSegments = segments.filter(seg => {
+        const segStart = seg.index;
+        const segEnd = seg.index + seg.segment.length;
+        return segStart < end && segEnd > start;
+      });
+      
+      if (overlappingSegments.length === 0) continue;
+
+      const fragment = doc.createDocumentFragment();
+      let currentPos = start;
+      
+      for (const seg of overlappingSegments) {
+        const segStart = seg.index;
+        const segEnd = seg.index + seg.segment.length;
+        
+        const overlapStart = Math.max(start, segStart);
+        const overlapEnd = Math.min(end, segEnd);
+        
+        if (overlapStart > currentPos) {
+          fragment.appendChild(doc.createTextNode(combinedText.substring(currentPos, overlapStart)));
+        }
+        
+        const span = doc.createElement('span');
+        const id = indexToId.get(seg.index)!;
+        span.setAttribute('data-ruri-id', id);
+        span.textContent = combinedText.substring(overlapStart, overlapEnd);
+        fragment.appendChild(span);
+        
+        currentPos = overlapEnd;
+      }
+      
+      if (currentPos < end) {
+        fragment.appendChild(doc.createTextNode(combinedText.substring(currentPos, end)));
+      }
+      
+      replacements.push({ node, fragment });
+      modified = true;
+    }
+    
+    // Apply replacements
+    for (const { node, fragment } of replacements) {
+      node.parentNode?.replaceChild(fragment, node);
+    }
+    
+    if (modified) {
       el.setAttribute('data-ruri-processed', 'true');
-      sentences.push({ id, text: segments[0] });
     } else {
-      // Multiple sentences: replace innerHTML with spans, being careful with existing HTML
-      // A naive approach: if there's no HTML inside, just text, we can wrap.
-      // If there are child elements (e.g. <a>), splitting gets complex. 
-      // For simplicity in this demo, if there are child elements, we treat the whole element as one sentence block,
-      // or we just replace text. Let's check for child elements.
-      if (el.children.length === 0) {
-        const spanNodes = segments.map(seg => {
-          const id = `ruri-sent-${sentenceCounter++}`;
-          sentences.push({ id, text: seg });
-          return `<span data-ruri-id="${id}">${escapeHtml(seg)}</span>`;
-        });
-        el.innerHTML = spanNodes.join('');
+      // If no text nodes were modified (should be rare if there's text), just mark it
+      if (!el.hasAttribute('data-ruri-processed')) {
+        el.setAttribute('data-ruri-id', `ruri-sent-${sentenceCounter++}`);
         el.setAttribute('data-ruri-processed', 'true');
-      } else {
-        // Fallback: don't split if there are children to avoid breaking links/formatting
-        const id = `ruri-sent-${sentenceCounter++}`;
-        el.setAttribute('data-ruri-id', id);
-        el.setAttribute('data-ruri-processed', 'true');
-        sentences.push({ id, text });
       }
     }
+  });
+  
+  const sentences: ExtractedSentence[] = [];
+  sentencesMap.forEach((text, id) => {
+    sentences.push({ id, text: text.trim() });
   });
   
   return sentences;
