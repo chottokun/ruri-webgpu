@@ -226,6 +226,16 @@ async function analyzePage() {
     
     statusText.innerText = `抽出された文: ${extracted.length}`;
     
+    let currentQuery = searchInput.value.trim();
+    let queryEmbedding: Float32Array | null = null;
+    if (currentQuery) {
+      queryEmbedding = await embedText(currentQuery);
+      resultsContainer.innerHTML = '';
+    }
+    
+    let streamingResults: any[] = [];
+    const isHybrid = true;
+    
     for (let i = 0; i < inPageSentences.length; i++) {
       if (!analysisInProgress || !isOverlayOpen) break;
       
@@ -233,14 +243,34 @@ async function analyzePage() {
       const embedding = await embedText(inPageSentences[i].text);
       inPageSentences[i].embedding = embedding;
       
-      if (searchInput.value.trim() && i % 5 === 0) {
-        performSearch(searchInput.value);
+      // Streaming threshold matching
+      if (currentQuery && queryEmbedding) {
+        const similarity = computeCosineSimilarity(queryEmbedding, embedding);
+        const match = computeHybridScore(similarity, inPageSentences[i].text, currentQuery, isHybrid);
+        
+        if (match.score >= 0.70 || match.matched) {
+          streamingResults.push({
+            id: inPageSentences[i].id,
+            title: inPageSentences[i].text,
+            url: '',
+            score: match.score,
+            semanticSimilarity: similarity,
+            keywordMatched: match.matched,
+            matchTarget: 'text',
+            isInPage: true
+          });
+          
+          streamingResults.sort((a, b) => b.score - a.score);
+          displayResults(streamingResults.slice(0, 10));
+        }
       }
     }
     
     statusText.innerText = '解析完了';
-    if (searchInput.value.trim()) {
-      performSearch(searchInput.value);
+    if (searchInput.value.trim() && !currentQuery) {
+        performSearch(searchInput.value);
+    } else if (searchInput.value.trim() && searchInput.value.trim() !== currentQuery) {
+        performSearch(searchInput.value);
     }
     
     setTimeout(() => {
