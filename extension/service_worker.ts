@@ -111,12 +111,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Send a message to content script to toggle overlay on action click
 chrome.action.onClicked.addListener(async (tab) => {
-  if (tab.id) {
-    chrome.scripting.executeScript({
+  if (!tab.id) return;
+
+  // chrome://, chrome-extension://, edge://, about: などの制限ページではスクリプト実行が禁止されているため安全にスキップ
+  const url = tab.url || '';
+  if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('file://')) {
+    console.warn(`[ruri-webgpu] スクリプト実行が許可されていないページです: ${url}`);
+    return;
+  }
+
+  try {
+    await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => {
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }));
       }
     });
+  } catch (err: any) {
+    console.warn('[ruri-webgpu] executeScript 実行スキップ:', err.message);
   }
 });

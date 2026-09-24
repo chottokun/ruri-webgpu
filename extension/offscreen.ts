@@ -8,17 +8,35 @@
 
 import { EmbeddingModel } from '../src/core/model';
 import type * as ort from 'onnxruntime-web';
+// Chrome MV3動的import回避: JSEPモジュールをバンドル内にインライン化（静的インポート）
+// @ts-ignore
+import ortWasmThreaded from '../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs';
 
-// Extension環境では、offscreen.htmlでロードされたローカルortのWASMパスをローカルassetsに事前に設定
+// グローバルスコープに静的ロードされたファクトリ関数を事前バインド
+(globalThis as any).__ortWasmThreaded = ortWasmThreaded;
+(window as any).__ortWasmThreaded = ortWasmThreaded;
+
+// Extension環境では、offscreen.htmlでロードされたローカルortのWASMパスおよびスレッド設定を事前に適用
 const ortInstance = (window as any).ort;
 if (ortInstance) {
   if (ortInstance.env) {
     if (!ortInstance.env.wasm) {
       ortInstance.env.wasm = {};
     }
-    // 末尾にスラッシュを付与（ortの仕様）
-    const baseUrl = chrome.runtime.getURL('assets/ort/');
-    ortInstance.env.wasm.wasmPaths = baseUrl;
+    // Chrome拡張機能環境ではSharedArrayBufferが無効なため、シングルスレッドで動作させる
+    ortInstance.env.wasm.numThreads = 1;
+    // 相対パス形式およびオブジェクト形式でWASM/MJSアセットのパスを明示指定
+    // (chrome-extension://完全修飾URLの動的importエラー対策)
+    ortInstance.env.wasm.wasmPaths = {
+      'ort-wasm-simd-threaded.jsep.wasm': './assets/ort/ort-wasm-simd-threaded.jsep.wasm',
+      'ort-wasm-simd-threaded.jsep.mjs': './assets/ort/ort-wasm-simd-threaded.jsep.mjs',
+      'ort-wasm-simd.wasm': './assets/ort/ort-wasm-simd.wasm',
+      'ort-wasm-simd.mjs': './assets/ort/ort-wasm-simd.mjs',
+      'ort-wasm.wasm': './assets/ort/ort-wasm.wasm',
+      'ort-wasm.mjs': './assets/ort/ort-wasm.mjs',
+      mjs: './assets/ort/ort-wasm-simd-threaded.jsep.mjs',
+      wasm: './assets/ort/ort-wasm-simd-threaded.jsep.wasm',
+    };
   }
 }
 

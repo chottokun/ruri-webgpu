@@ -15,16 +15,30 @@ function copyOrtAssetsPlugin() {
       }
 
       const filesToCopy = fs.readdirSync(ortDistPath).filter(file => 
-        file === 'ort.all.min.js' || file.endsWith('.wasm')
+        file === 'ort.all.min.js' || file.endsWith('.wasm') || file.endsWith('.mjs')
       );
 
       for (const file of filesToCopy) {
-        fs.copyFileSync(
-          path.join(ortDistPath, file),
-          path.join(distAssetsPath, file)
-        );
+        const srcFile = path.join(ortDistPath, file);
+        const destFile = path.join(distAssetsPath, file);
+
+        if (file === 'ort.all.min.js') {
+          let content = fs.readFileSync(srcFile, 'utf-8');
+          // Chrome MV3動的import回避: globalThis.__ortWasmThreaded が存在する場合は動的importをバイパス
+          const target = 'q1=async r=>(await import(/*webpackIgnore:true*/ /*@vite-ignore*/r)).default';
+          const replacement = 'q1=async r=>globalThis.__ortWasmThreaded||(await import(/*webpackIgnore:true*/ /*@vite-ignore*/r)).default';
+          if (content.includes(target)) {
+            content = content.replace(target, replacement);
+            console.log('Successfully patched ort.all.min.js to bypass dynamic import.');
+          } else {
+            console.warn('Target string not found in ort.all.min.js for patching!');
+          }
+          fs.writeFileSync(destFile, content, 'utf-8');
+        } else {
+          fs.copyFileSync(srcFile, destFile);
+        }
       }
-      console.log('Copied ONNX Runtime Web assets to extension dist.');
+      console.log('Copied and configured ONNX Runtime Web assets to extension dist.');
     }
   };
 }
@@ -42,6 +56,7 @@ function copyManifestPlugin() {
 }
 
 export default defineConfig({
+  base: './',
   root: __dirname,
   plugins: [copyOrtAssetsPlugin(), copyManifestPlugin()],
   build: {
