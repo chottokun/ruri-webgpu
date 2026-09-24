@@ -16,6 +16,11 @@ function getOrt(): typeof ort {
   if (!globalOrt) {
     throw new Error('ONNX Runtime Web (ort) が読み込まれていません。CDNスクリプトのロード状態を確認してください。');
   }
+
+  if (!globalOrt.env.wasm.wasmPaths) {
+    globalOrt.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
+  }
+
   return globalOrt;
 }
 

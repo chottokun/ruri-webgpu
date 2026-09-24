@@ -17,7 +17,7 @@ async function setupOffscreenDocument(path: string) {
   
   creatingOffscreenDocument = chrome.offscreen.createDocument({
     url: path,
-    reasons: [chrome.offscreen.Reason.WORKERS],
+    reasons: [chrome.offscreen.Reason.DOM_PARSER],
     justification: 'Running WebGPU for semantic search embeddings',
   });
   
