@@ -32,7 +32,7 @@ async function bootstrap(): Promise<void> {
     await model.init((progress) => {
       if (progress.stage === 'downloading_tokenizer' || progress.stage === 'downloading_model') {
         progressUI.updateDownloadProgress(
-          progress.stage === 'downloading_tokenizer' ? 'tokenizer.model' : 'onnx model',
+          progress.stage === 'downloading_tokenizer' ? 'tokenizer.json' : 'onnx model',
           progress.loadedBytes || 0,
           progress.totalBytes || 0,
           progress.speed || 0

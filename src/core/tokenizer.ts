@@ -5,7 +5,7 @@
  * 参照: chottokun/ruri_with_sentencepiece_lite (dist_assets/ruri_v3_lite.py)
  */
 
-import { SentencePieceProcessor } from '@sctg/sentencepiece-js';
+import { Tokenizer } from '@huggingface/tokenizers';
 import { SPECIAL_TOKENS, MAX_LENGTH } from '../config';
 
 export interface TokenizedInputs {
@@ -16,18 +16,17 @@ export interface TokenizedInputs {
 }
 
 export class SpmTokenizer {
-  private processor: any = null;
+  private processor: Tokenizer | null = null;
   private isLoaded: boolean = false;
 
   /**
    * tokenizer.model のバイナリデータ (ArrayBuffer または Uint8Array) から初期化します。
    */
   async loadModel(modelBuffer: ArrayBuffer | Uint8Array): Promise<void> {
-    const uint8Array = modelBuffer instanceof Uint8Array ? modelBuffer : new Uint8Array(modelBuffer);
-    const spp = new SentencePieceProcessor();
-    // @sctg/sentencepiece-js の内部メソッド _loadModel は Uint8Array を仮想FS経由で直接ロード可能
-    await (spp as any)._loadModel(uint8Array);
-    this.processor = spp;
+    const jsonString = new TextDecoder().decode(modelBuffer);
+    const tokenizerJson = JSON.parse(jsonString);
+    const tokenizerConfig = {}; // @huggingface/tokenizers expects config as second param
+    this.processor = new Tokenizer(tokenizerJson, tokenizerConfig);
     this.isLoaded = true;
   }
 
@@ -38,7 +37,8 @@ export class SpmTokenizer {
     if (!this.isLoaded || !this.processor) {
       throw new Error('トークナイザーが初期化されていません。先に loadModel を呼び出してください。');
     }
-    return this.processor.encodeIds(text);
+    // 特殊トークンを含めずにエンコード
+    return Array.from(this.processor.encode(text, { add_special_tokens: false }).ids);
   }
 
   /**
