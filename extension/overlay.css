@@ -129,6 +129,21 @@
   color: #ffffff;
 }
 
+.ruri-highlight-btn {
+  color: #64748b;
+  position: relative;
+}
+
+.ruri-highlight-btn.active {
+  color: #facc15;
+  background: rgba(250, 204, 21, 0.15);
+}
+
+.ruri-highlight-btn.active:hover {
+  background: rgba(250, 204, 21, 0.28);
+  color: #fef08a;
+}
+
 .ruri-status-banner {
   padding: 4px 12px 6px;
   font-size: 11px;

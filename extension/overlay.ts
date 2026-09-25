@@ -20,9 +20,21 @@ let matchedResults: {
   ranges?: Range[];
 }[] = [];
 
+// ハイライト表示のオン/オフ状態（デフォルト: ON、localStorage で永続化）
+let isHighlightEnabled = true;
+try {
+  const saved = localStorage.getItem('ruri_highlight_enabled');
+  if (saved !== null) {
+    isHighlightEnabled = saved === 'true';
+  }
+} catch {
+  // localStorageアクセス禁止環境等のフォールバック
+}
+
 // DOM Elements inside ShadowRoot
 let findInput: HTMLInputElement;
 let countBadge: HTMLElement;
+let highlightToggleBtn: HTMLButtonElement;
 let prevBtn: HTMLButtonElement;
 let nextBtn: HTMLButtonElement;
 let closeBtn: HTMLButtonElement;
@@ -92,6 +104,12 @@ export function initOverlay() {
       e.preventDefault();
       e.stopPropagation();
       toggleOverlay(false);
+    }
+    // Alt+H で全ハイライトのオン/オフ切り替え
+    if (e.altKey && (e.key === 'h' || e.key === 'H') && isOverlayOpen) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleHighlight();
     }
   }, true);
 }
@@ -164,6 +182,13 @@ function createOverlay() {
       </div>
       <div class="ruri-find-count" id="ruri-find-count">-/-</div>
       <div class="ruri-find-actions">
+        <button class="ruri-find-btn ruri-highlight-btn ${isHighlightEnabled ? 'active' : ''}" id="ruri-highlight-toggle" title="全ハイライト表示: ${isHighlightEnabled ? 'ON' : 'OFF'} (Alt+H)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m9 11-6 6v3h3l6-6"/>
+            <path d="m22 7-3-3"/>
+            <path d="m14 4 7 7"/>
+          </svg>
+        </button>
         <button class="ruri-find-btn" id="ruri-prev-btn" title="前へ (Shift+Enter)">▲</button>
         <button class="ruri-find-btn" id="ruri-next-btn" title="次へ (Enter)">▼</button>
         <button class="ruri-find-btn" id="ruri-close-btn" title="閉じる (Esc)">✕</button>
@@ -180,6 +205,7 @@ function createOverlay() {
   // 要素バインド
   findInput = shadowRoot.getElementById('ruri-find-input') as HTMLInputElement;
   countBadge = shadowRoot.getElementById('ruri-find-count') as HTMLElement;
+  highlightToggleBtn = shadowRoot.getElementById('ruri-highlight-toggle') as HTMLButtonElement;
   prevBtn = shadowRoot.getElementById('ruri-prev-btn') as HTMLButtonElement;
   nextBtn = shadowRoot.getElementById('ruri-next-btn') as HTMLButtonElement;
   closeBtn = shadowRoot.getElementById('ruri-close-btn') as HTMLButtonElement;
@@ -187,6 +213,7 @@ function createOverlay() {
   statusBanner = shadowRoot.getElementById('ruri-status-banner') as HTMLElement;
 
   // イベントハンドラ
+  highlightToggleBtn.addEventListener('click', toggleHighlight);
   closeBtn.addEventListener('click', () => toggleOverlay(false));
   prevBtn.addEventListener('click', () => navigate(-1));
   nextBtn.addEventListener('click', () => navigate(1));
@@ -214,8 +241,29 @@ function createOverlay() {
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       navigate(-1);
+    } else if (e.altKey && (e.key === 'h' || e.key === 'H')) {
+      e.preventDefault();
+      toggleHighlight();
     }
   });
+}
+
+function toggleHighlight() {
+  isHighlightEnabled = !isHighlightEnabled;
+  try {
+    localStorage.setItem('ruri_highlight_enabled', isHighlightEnabled.toString());
+  } catch {}
+
+  if (highlightToggleBtn) {
+    if (isHighlightEnabled) {
+      highlightToggleBtn.classList.add('active');
+      highlightToggleBtn.title = '全ハイライト表示: ON (クリックでOFF / Alt+H)';
+    } else {
+      highlightToggleBtn.classList.remove('active');
+      highlightToggleBtn.title = '全ハイライト表示: OFF (クリックでON / Alt+H)';
+    }
+  }
+  updateInlineHighlights();
 }
 
 function showStatus(message: string, isError = false) {
@@ -455,12 +503,13 @@ function updateInlineHighlights() {
         if (!item.ranges || item.ranges.length === 0) return;
         if (idx === currentIndex) {
           currentRanges.push(...item.ranges);
-        } else {
+        } else if (isHighlightEnabled) {
+          // 黄色ハイライトが有効な場合のみ追加
           matchRanges.push(...item.ranges);
         }
       });
 
-      if (matchRanges.length > 0) {
+      if (isHighlightEnabled && matchRanges.length > 0) {
         (CSS as any).highlights.set('ruri-match', new (window as any).Highlight(...matchRanges));
       }
       if (currentRanges.length > 0) {
@@ -475,6 +524,7 @@ function updateInlineHighlights() {
   // フォールバック: DOM class 方式
   matchedResults.forEach((item, idx) => {
     const isCurrent = idx === currentIndex;
+    if (!isCurrent && !isHighlightEnabled) return;
     const elements = document.querySelectorAll(`[data-ruri-id="${item.id}"]`);
     elements.forEach(el => {
       el.classList.add(isCurrent ? 'ruri-match-current' : 'ruri-match');
