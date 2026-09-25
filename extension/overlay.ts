@@ -60,20 +60,24 @@ export function initOverlay() {
   const oldElements = document.querySelectorAll('#ruri-overlay-root');
   oldElements.forEach(el => el.remove());
 
-  document.addEventListener('keydown', (e) => {
+  // キャプチャフェーズ (true) で最優先でキーイベントを捕捉し、ブラウザのネイティブCtrl+Fをインターセプト
+  window.addEventListener('keydown', (e) => {
     // Ctrl+F / Cmd+F または Ctrl+K / Cmd+K でスマートページ内検索バーを起動
     if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F' || e.key === 'k' || e.key === 'K')) {
       if (!e.shiftKey) {
         e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
         toggleOverlay(true);
       }
     }
     // Esc で閉じる
     if (e.key === 'Escape' && isOverlayOpen) {
       e.preventDefault();
+      e.stopPropagation();
       toggleOverlay(false);
     }
-  });
+  }, true);
 }
 
 export function toggleOverlay(force?: boolean) {

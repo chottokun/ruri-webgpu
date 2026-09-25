@@ -1,7 +1,16 @@
-import { initOverlay } from './overlay';
+import { initOverlay, toggleOverlay } from './overlay';
 
 // Execute right away
 initOverlay();
+
+// service_worker (アイコンクリック / commandsショートカット) からの開閉要求をリッスン
+if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === 'TOGGLE_OVERLAY') {
+      toggleOverlay();
+    }
+  });
+}
 
 // Also keep the highlight animation CSS
 if (!document.getElementById('ruri-highlight-style')) {

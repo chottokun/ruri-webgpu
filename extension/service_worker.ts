@@ -113,7 +113,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab.id) return;
 
-  // chrome://, chrome-extension://, edge://, about: などの制限ページではスクリプト実行が禁止されているため安全にスキップ
   const url = tab.url || '';
   if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('file://')) {
     console.warn(`[ruri-webgpu] スクリプト実行が許可されていないページです: ${url}`);
@@ -121,13 +120,22 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
 
   try {
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => {
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }));
-      }
-    });
-  } catch (err: any) {
-    console.warn('[ruri-webgpu] executeScript 実行スキップ:', err.message);
+    await chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_OVERLAY' });
+  } catch {
+    // もしContent Scriptがまだ注入されていないページの場合はスクリプトを注入
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content.js']
+      });
+      // 注入後に再度トグル
+      setTimeout(async () => {
+        try {
+          if (tab.id) await chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_OVERLAY' });
+        } catch (e) {}
+      }, 100);
+    } catch (err: any) {
+      console.warn('[ruri-webgpu] executeScript 実行スキップ:', err.message);
+    }
   }
 });
