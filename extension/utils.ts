@@ -64,7 +64,8 @@ export function extractAndSplitSentences(doc: Document): ExtractedSentence[] {
       const segText = seg.segment.trim();
       const segStart = seg.index;
       const segEnd = seg.index + seg.segment.length;
-      const id = `ruri-sent-${sentenceCounter++}`;
+      const existingId = el.getAttribute('data-ruri-id');
+      const id = (existingId && segments.length === 1) ? existingId : `ruri-sent-${sentenceCounter++}`;
 
       // 各文に対応する Range を作成（DOMツリーを破壊せずに文字位置を正確に参照）
       const ranges: Range[] = [];

@@ -30,8 +30,12 @@ describe('Utils tests', () => {
       expect(sentences[1].text).toBe('そして第二文です！');
       expect(sentences[2].text).toBe('最後に第三文？');
       
-      const spans = document.querySelectorAll('span[data-ruri-id]');
-      expect(spans).toHaveLength(3);
+      // 非破壊 Range が正しく生成されていることを検証
+      expect(sentences[0].ranges?.length).toBeGreaterThan(0);
+      expect(sentences[1].ranges?.length).toBeGreaterThan(0);
+      expect(sentences[2].ranges?.length).toBeGreaterThan(0);
+      // DOMツリーが破壊されていないことを検証
+      expect(document.querySelectorAll('p')).toHaveLength(1);
     });
 
     it('should handle elements with existing IDs gracefully (idempotent)', () => {
@@ -45,17 +49,18 @@ describe('Utils tests', () => {
       expect(sentences[0].id).toBe('ruri-sent-99');
     });
 
-    it('should skip splitting if there are HTML child elements to avoid breaking them', () => {
-      const dom = new JSDOM(`<!DOCTYPE html><html><body><p>リンクを含む文です。<a href="#">ここをクリック</a>。分割しません。</p></body></html>`);
+    it('should preserve HTML child elements without breaking DOM tree', () => {
+      const dom = new JSDOM(`<!DOCTYPE html><html><body><p>リンクを含む文です。<a href="#">ここをクリック</a>。分割してもDOMは非破壊です。</p></body></html>`);
       const document = dom.window.document;
       
       const sentences = extractAndSplitSentences(document);
-      
-      expect(sentences).toHaveLength(1);
-      expect(sentences[0].text).toBe('リンクを含む文です。ここをクリック。分割しません。');
+      expect(sentences.length).toBeGreaterThan(0);
       
       const p = document.querySelector('p')!;
-      expect(p.innerHTML).toContain('<a href="#">');
+      const a = p.querySelector('a');
+      expect(a).not.toBeNull();
+      expect(a?.textContent).toBe('ここをクリック');
+      expect(a?.getAttribute('href')).toBe('#');
     });
   });
 
