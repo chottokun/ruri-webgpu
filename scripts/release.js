@@ -95,7 +95,8 @@ async function main() {
   const args = process.argv.slice(2);
   const isDryRun = args.includes('--dry-run');
   const noPush = args.includes('--no-push');
-  const filteredArgs = args.filter(a => !a.startsWith('--'));
+  const autoYes = args.includes('--yes') || args.includes('-y');
+  const filteredArgs = args.filter(a => !a.startsWith('-'));
 
   // 1. 現在のバージョン取得
   const pkg = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, 'utf-8'));
@@ -145,7 +146,7 @@ async function main() {
   console.log(`\n🎯 対象バージョン: v${currentVersion} -> v${nextVersion}`);
 
   // 確認プロンプト
-  if (!isDryRun) {
+  if (!isDryRun && !autoYes) {
     const confirm = await prompt(`\nv${nextVersion} としてリリース処理を開始しますか？ (y/N): `);
     if (confirm.toLowerCase() !== 'y' && confirm.toLowerCase() !== 'yes') {
       console.log('中止しました。');
@@ -156,9 +157,11 @@ async function main() {
   // 3. 作業ツリーのチェック
   if (!isGitClean() && !isDryRun) {
     console.log('\n⚠️  未コミットの変更が存在します。事前にコミットまたは stash してください。');
-    const proceed = await prompt('未コミットの変更を含めて続行しますか？ (y/N): ');
-    if (proceed.toLowerCase() !== 'y') {
-      process.exit(1);
+    if (!autoYes) {
+      const proceed = await prompt('未コミットの変更を含めて続行しますか？ (y/N): ');
+      if (proceed.toLowerCase() !== 'y') {
+        process.exit(1);
+      }
     }
   }
 
@@ -204,8 +207,12 @@ async function main() {
 
   // 7. リモートへプッシュ
   if (!noPush && !isDryRun) {
-    const shouldPush = await prompt(`\n🚀 リモート (origin/${currentBranch}) とタグ (${tagName}) をプッシュしますか？ (Y/n): `);
-    if (shouldPush.toLowerCase() !== 'n') {
+    let shouldPush = autoYes;
+    if (!autoYes) {
+      const answer = await prompt(`\n🚀 リモート (origin/${currentBranch}) とタグ (${tagName}) をプッシュしますか？ (Y/n): `);
+      shouldPush = answer.toLowerCase() !== 'n';
+    }
+    if (shouldPush) {
       console.log('リモートへプッシュ中...');
       exec(`git push origin ${currentBranch}`);
       exec(`git push origin ${tagName}`);
