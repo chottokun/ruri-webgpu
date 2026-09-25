@@ -85,6 +85,11 @@ async function ensureOffscreenReady() {
 
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // 送信元が同一拡張機能（Content Script / Offscreen）か検証
+  if (sender.id !== chrome.runtime.id) {
+    return false;
+  }
+
   if (message.type === 'OFFSCREEN_READY') {
     offscreenReady = true;
     return false;

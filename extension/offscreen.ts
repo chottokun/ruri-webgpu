@@ -48,6 +48,11 @@ let initPromise: Promise<string> | null = null;
 chrome.runtime.sendMessage({ type: 'OFFSCREEN_READY' });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // 送信元が同一拡張機能か検証
+  if (sender.id !== chrome.runtime.id) {
+    return false;
+  }
+
   if (message.target !== 'offscreen') {
     return false;
   }

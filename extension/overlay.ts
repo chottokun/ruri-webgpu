@@ -266,15 +266,27 @@ function toggleHighlight() {
   updateInlineHighlights();
 }
 
-function showStatus(message: string, isError = false) {
+function showStatus(message: string, isError = false, withSpinner = false) {
   if (!statusBanner) return;
   if (!message) {
     statusBanner.classList.add('hidden');
+    statusBanner.replaceChildren();
     return;
   }
   statusBanner.classList.remove('hidden');
-  statusBanner.innerHTML = message;
   statusBanner.style.color = isError ? '#f87171' : '#94a3b8';
+  statusBanner.replaceChildren();
+
+  const hasSpinner = withSpinner || message.includes('ruri-spinner');
+  if (hasSpinner) {
+    const spinner = document.createElement('span');
+    spinner.className = 'ruri-spinner';
+    statusBanner.appendChild(spinner);
+    statusBanner.appendChild(document.createTextNode(' '));
+  }
+
+  const cleanMessage = message.replace(/<span class="ruri-spinner"><\/span>\s*/, '');
+  statusBanner.appendChild(document.createTextNode(cleanMessage));
 }
 
 function preparePageSentences(force = false) {
