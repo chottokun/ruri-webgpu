@@ -55,10 +55,24 @@ function copyManifestPlugin() {
   };
 }
 
+function copyDocsPlugin() {
+  return {
+    name: 'copy-docs',
+    closeBundle() {
+      const docPath = resolve(__dirname, '../docs/EXTENSION.md');
+      const distDocPath = resolve(__dirname, '../dist-extension/README.md');
+      if (fs.existsSync(docPath)) {
+        fs.copyFileSync(docPath, distDocPath);
+        console.log('Copied documentation (README.md) to extension dist.');
+      }
+    }
+  };
+}
+
 export default defineConfig({
   base: './',
   root: __dirname,
-  plugins: [copyOrtAssetsPlugin(), copyManifestPlugin()],
+  plugins: [copyOrtAssetsPlugin(), copyManifestPlugin(), copyDocsPlugin()],
   build: {
     outDir: resolve(__dirname, '../dist-extension'),
     emptyOutDir: true,
