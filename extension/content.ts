@@ -12,19 +12,30 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
   });
 }
 
-// Also keep the highlight animation CSS
+// インラインハイライト用スタイル（Ctrl+F準拠の全マッチ表示 + カレント強調）
 if (!document.getElementById('ruri-highlight-style')) {
   const style = document.createElement('style');
   style.id = 'ruri-highlight-style';
   style.textContent = `
-    @keyframes ruri-highlight-fade {
-      0% { background-color: rgba(99, 102, 241, 0.6); }
-      100% { background-color: transparent; }
+    /* マッチしたすべての文（Ctrl+Fの黄色ハイライト相当） */
+    .ruri-match {
+      background-color: rgba(254, 240, 138, 0.85) !important;
+      color: #0f172a !important;
+      border-radius: 3px !important;
+      box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.5) !important;
+      transition: background-color 0.15s ease !important;
     }
-    .ruri-highlighted {
-      animation: ruri-highlight-fade 3s ease-out;
-      border-radius: 2px;
-      padding: 0 2px;
+    /* 現在選択中のマッチ（Ctrl+Fのオレンジ/強調色相当） */
+    .ruri-match-current {
+      background-color: #6366f1 !important;
+      color: #ffffff !important;
+      border-radius: 3px !important;
+      box-shadow: 0 0 0 2px #4338ca, 0 0 12px rgba(99, 102, 241, 0.7) !important;
+      animation: ruri-pulse 1.5s ease-in-out infinite alternate !important;
+    }
+    @keyframes ruri-pulse {
+      from { box-shadow: 0 0 0 2px #4338ca, 0 0 6px rgba(99, 102, 241, 0.5); }
+      to { box-shadow: 0 0 0 2px #4338ca, 0 0 14px rgba(99, 102, 241, 0.9); }
     }
   `;
   document.head.appendChild(style);

@@ -104,6 +104,8 @@ export function toggleOverlay(force?: boolean) {
     if (overlayElement) {
       overlayElement.classList.add('hidden');
     }
+    // 検索バーを閉じたときはハイライトを解除
+    clearAllHighlights();
   }
 }
 
@@ -261,6 +263,7 @@ async function startStreamSearch(query: string) {
     dropdown.classList.add('hidden');
     dropdown.innerHTML = '';
     showStatus('');
+    clearAllHighlights();
     return;
   }
 
@@ -311,10 +314,11 @@ async function startStreamSearch(query: string) {
   currentIndex = matchedResults.length > 0 ? 0 : -1;
   updateCountUI();
   renderDropdown();
+  updateInlineHighlights();
 
   // 最初のマッチに自動ジャンプ
   if (currentIndex >= 0) {
-    jumpToCurrentMatch(false);
+    jumpToCurrentMatch();
   }
 
   if (uncomputedIndices.length === 0) {
@@ -351,10 +355,11 @@ async function startStreamSearch(query: string) {
 
         if (currentIndex === -1 && matchedResults.length > 0) {
           currentIndex = 0;
-          jumpToCurrentMatch(false);
+          jumpToCurrentMatch();
         }
         updateCountUI();
         renderDropdown();
+        updateInlineHighlights();
       }
     } catch (e) {
       console.warn('Sentence embedding failed:', e);
@@ -381,21 +386,55 @@ function navigate(direction: number) {
   currentIndex = (currentIndex + direction + matchedResults.length) % matchedResults.length;
   updateCountUI();
   renderDropdown();
-  jumpToCurrentMatch(true);
+  jumpToCurrentMatch();
 }
 
-function jumpToCurrentMatch(flash = true) {
+/**
+ * ページ上の全ハイライト（黄色/選択中）を解除
+ */
+function clearAllHighlights() {
+  const matches = document.querySelectorAll('.ruri-match, .ruri-match-current');
+  matches.forEach(el => {
+    el.classList.remove('ruri-match', 'ruri-match-current');
+  });
+}
+
+/**
+ * マッチした文すべてをページ上でインラインハイライト（Ctrl+F仕様）
+ */
+function updateInlineHighlights() {
+  clearAllHighlights();
+  if (matchedResults.length === 0) return;
+
+  // 1. すべてのマッチ箇所に .ruri-match を付与（黄色ハイライト）
+  matchedResults.forEach((item) => {
+    const elements = document.querySelectorAll(`[data-ruri-id="${item.id}"]`);
+    elements.forEach(el => {
+      el.classList.add('ruri-match');
+    });
+  });
+
+  // 2. 現在フォーカス中の文に .ruri-match-current を付与（カレント強調）
+  if (currentIndex >= 0 && currentIndex < matchedResults.length) {
+    const currentItem = matchedResults[currentIndex];
+    const elements = document.querySelectorAll(`[data-ruri-id="${currentItem.id}"]`);
+    elements.forEach(el => {
+      el.classList.add('ruri-match-current');
+    });
+  }
+}
+
+/**
+ * カレントのマッチ文へ自動スクロール＆強調
+ */
+function jumpToCurrentMatch() {
   if (currentIndex < 0 || currentIndex >= matchedResults.length) return;
   const match = matchedResults[currentIndex];
   const el = document.querySelector(`[data-ruri-id="${match.id}"]`);
   if (el) {
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    if (flash) {
-      el.classList.remove('ruri-highlighted');
-      void (el as HTMLElement).offsetWidth;
-      el.classList.add('ruri-highlighted');
-    }
   }
+  updateInlineHighlights();
 }
 
 function renderDropdown() {
@@ -426,7 +465,7 @@ function renderDropdown() {
       currentIndex = idx;
       updateCountUI();
       renderDropdown();
-      jumpToCurrentMatch(true);
+      jumpToCurrentMatch();
     });
 
     dropdown.appendChild(row);
