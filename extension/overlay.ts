@@ -8,6 +8,7 @@ let shadowRoot: ShadowRoot | null = null;
 let modelReady = false;
 let modelInitializing = false;
 let inPageSentences: (ExtractedSentence & { embedding?: Float32Array })[] = [];
+const embeddingCache = new Map<string, Float32Array>();
 let currentSearchAbortId = 0;
 let currentIndex = -1;
 let matchedResults: {
@@ -16,6 +17,7 @@ let matchedResults: {
   score: number;
   semanticSimilarity: number;
   keywordMatched: boolean;
+  ranges?: Range[];
 }[] = [];
 
 // DOM Elements inside ShadowRoot
@@ -60,6 +62,20 @@ export function initOverlay() {
   const oldElements = document.querySelectorAll('#ruri-overlay-root');
   oldElements.forEach(el => el.remove());
 
+  // GitHub (Turbo / PJAX) や SPA のページ遷移イベントを監視してDOM同期
+  const handlePageNavigation = () => {
+    inPageSentences = [];
+    if (isOverlayOpen) {
+      preparePageSentences(true);
+      if (findInput && findInput.value.trim()) {
+        startStreamSearch(findInput.value.trim());
+      }
+    }
+  };
+  window.addEventListener('popstate', handlePageNavigation);
+  document.addEventListener('turbo:render', handlePageNavigation);
+  document.addEventListener('turbo:load', handlePageNavigation);
+
   // キャプチャフェーズ (true) で最優先でキーイベントを捕捉し、ブラウザのネイティブCtrl+Fをインターセプト
   window.addEventListener('keydown', (e) => {
     // Ctrl+F / Cmd+F または Ctrl+K / Cmd+K でスマートページ内検索バーを起動
@@ -93,8 +109,8 @@ export function toggleOverlay(force?: boolean) {
       findInput?.select();
     }, 40);
 
-    // ページ内文章の抽出＆DOMタグ付け
-    preparePageSentences();
+    // ページ内文章の抽出＆Range取得（SPA/GitHubでページ内容が動的変更されている場合にも即追従）
+    preparePageSentences(true);
 
     // バックグラウンドでモデル初期化
     if (!modelReady && !modelInitializing) {
@@ -213,10 +229,16 @@ function showStatus(message: string, isError = false) {
   statusBanner.style.color = isError ? '#f87171' : '#94a3b8';
 }
 
-function preparePageSentences() {
-  if (inPageSentences.length === 0) {
+function preparePageSentences(force = false) {
+  if (force || inPageSentences.length === 0) {
     const extracted = extractAndSplitSentences(document);
-    inPageSentences = extracted.map(s => ({ ...s }));
+    inPageSentences = extracted.map(s => {
+      const cached = embeddingCache.get(s.text);
+      return {
+        ...s,
+        embedding: cached
+      };
+    });
   }
 }
 
@@ -301,7 +323,8 @@ async function startStreamSearch(query: string) {
           text: item.text,
           score: hybrid.score,
           semanticSimilarity: sim,
-          keywordMatched: hybrid.matched
+          keywordMatched: hybrid.matched,
+          ranges: item.ranges
         });
       }
     } else {
@@ -338,6 +361,7 @@ async function startStreamSearch(query: string) {
     try {
       const emb = await embedText(item.text, false);
       item.embedding = emb;
+      embeddingCache.set(item.text, emb);
       processed++;
 
       const sim = computeCosineSimilarity(queryEmbedding, emb);
@@ -349,7 +373,8 @@ async function startStreamSearch(query: string) {
           text: item.text,
           score: hybrid.score,
           semanticSimilarity: sim,
-          keywordMatched: hybrid.matched
+          keywordMatched: hybrid.matched,
+          ranges: item.ranges
         });
         matchedResults.sort((a, b) => b.score - a.score);
 
@@ -390,9 +415,17 @@ function navigate(direction: number) {
 }
 
 /**
- * ページ上の全ハイライト（黄色/選択中）を解除
+ * ページ上の全ハイライト（CSS Custom Highlight API / DOM class）を解除
  */
 function clearAllHighlights() {
+  if (typeof CSS !== 'undefined' && 'highlights' in CSS && (CSS as any).highlights) {
+    try {
+      (CSS as any).highlights.delete('ruri-match');
+      (CSS as any).highlights.delete('ruri-match-current');
+    } catch (e) {
+      console.warn('Failed to clear CSS highlights:', e);
+    }
+  }
   const matches = document.querySelectorAll('.ruri-match, .ruri-match-current');
   matches.forEach(el => {
     el.classList.remove('ruri-match', 'ruri-match-current');
@@ -401,27 +434,52 @@ function clearAllHighlights() {
 
 /**
  * マッチした文すべてをページ上でインラインハイライト（Ctrl+F仕様）
+ * CSS Custom Highlight API (Chrome 105+) を使用して、DOMを1ミリも破壊せずGPU描画
  */
 function updateInlineHighlights() {
   clearAllHighlights();
   if (matchedResults.length === 0) return;
 
-  // 1. すべてのマッチ箇所に .ruri-match を付与（黄色ハイライト）
-  matchedResults.forEach((item) => {
+  const supportsHighlightAPI =
+    typeof CSS !== 'undefined' &&
+    'highlights' in CSS &&
+    (CSS as any).highlights &&
+    typeof (window as any).Highlight !== 'undefined';
+
+  if (supportsHighlightAPI) {
+    try {
+      const matchRanges: Range[] = [];
+      const currentRanges: Range[] = [];
+
+      matchedResults.forEach((item, idx) => {
+        if (!item.ranges || item.ranges.length === 0) return;
+        if (idx === currentIndex) {
+          currentRanges.push(...item.ranges);
+        } else {
+          matchRanges.push(...item.ranges);
+        }
+      });
+
+      if (matchRanges.length > 0) {
+        (CSS as any).highlights.set('ruri-match', new (window as any).Highlight(...matchRanges));
+      }
+      if (currentRanges.length > 0) {
+        (CSS as any).highlights.set('ruri-match-current', new (window as any).Highlight(...currentRanges));
+      }
+      return;
+    } catch (e) {
+      console.warn('CSS Highlight API failed, falling back to class-based highlighting:', e);
+    }
+  }
+
+  // フォールバック: DOM class 方式
+  matchedResults.forEach((item, idx) => {
+    const isCurrent = idx === currentIndex;
     const elements = document.querySelectorAll(`[data-ruri-id="${item.id}"]`);
     elements.forEach(el => {
-      el.classList.add('ruri-match');
+      el.classList.add(isCurrent ? 'ruri-match-current' : 'ruri-match');
     });
   });
-
-  // 2. 現在フォーカス中の文に .ruri-match-current を付与（カレント強調）
-  if (currentIndex >= 0 && currentIndex < matchedResults.length) {
-    const currentItem = matchedResults[currentIndex];
-    const elements = document.querySelectorAll(`[data-ruri-id="${currentItem.id}"]`);
-    elements.forEach(el => {
-      el.classList.add('ruri-match-current');
-    });
-  }
 }
 
 /**
@@ -430,9 +488,18 @@ function updateInlineHighlights() {
 function jumpToCurrentMatch() {
   if (currentIndex < 0 || currentIndex >= matchedResults.length) return;
   const match = matchedResults[currentIndex];
-  const el = document.querySelector(`[data-ruri-id="${match.id}"]`);
-  if (el) {
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  if (match.ranges && match.ranges.length > 0) {
+    const firstRange = match.ranges[0];
+    const targetEl = firstRange.startContainer.parentElement;
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  } else {
+    const el = document.querySelector(`[data-ruri-id="${match.id}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   }
   updateInlineHighlights();
 }

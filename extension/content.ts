@@ -12,20 +12,30 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
   });
 }
 
-// インラインハイライト用スタイル（Ctrl+F準拠の全マッチ表示 + カレント強調）
+// インラインハイライト用スタイル
+// 1. CSS Custom Highlight API (Chrome 105+ ネイティブ: DOM破壊ゼロでGitHub等のSPAでも100%安定)
+// 2. フォールバック用クラススタイル
 if (!document.getElementById('ruri-highlight-style')) {
   const style = document.createElement('style');
   style.id = 'ruri-highlight-style';
   style.textContent = `
-    /* マッチしたすべての文（Ctrl+Fの黄色ハイライト相当） */
+    /* CSS Custom Highlight API 用セレクタ */
+    ::highlight(ruri-match) {
+      background-color: rgba(254, 240, 138, 0.85);
+      color: #0f172a;
+    }
+    ::highlight(ruri-match-current) {
+      background-color: #6366f1;
+      color: #ffffff;
+    }
+
+    /* フォールバック用クラス */
     .ruri-match {
       background-color: rgba(254, 240, 138, 0.85) !important;
       color: #0f172a !important;
       border-radius: 3px !important;
       box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.5) !important;
-      transition: background-color 0.15s ease !important;
     }
-    /* 現在選択中のマッチ（Ctrl+Fのオレンジ/強調色相当） */
     .ruri-match-current {
       background-color: #6366f1 !important;
       color: #ffffff !important;

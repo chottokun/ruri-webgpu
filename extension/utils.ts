@@ -1,127 +1,111 @@
 export interface ExtractedSentence {
   id: string;
   text: string;
+  ranges?: Range[];
+  element?: HTMLElement;
 }
 
 export function extractAndSplitSentences(doc: Document): ExtractedSentence[] {
-  const elements = doc.querySelectorAll('h1, h2, h3, h4, h5, h6, p, li');
-  const sentencesMap = new Map<string, string>();
+  // GitHub や一般的な Web ページのテキストを含む要素（末端のブロック・テキスト要素）を網羅
+  const rawElements = doc.querySelectorAll(
+    'h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th, pre, dt, dd, summary, figcaption, .react-code-text, [data-code-text]'
+  );
   
-  // Use Intl.Segmenter for reliable Japanese sentence splitting
+  // 親要素に別の対象要素が含まれる場合は末端側を優先し、親側での二重抽出を防ぐ
+  const targetElements: HTMLElement[] = [];
+  rawElements.forEach((node) => {
+    const el = node as HTMLElement;
+    // スクリプトやスタイル、オーバーレイ自身は除外
+    if (el.closest('#ruri-overlay-root') || el.tagName === 'SCRIPT' || el.tagName === 'STYLE') {
+      return;
+    }
+    const hasChildTarget = el.querySelector(
+      'h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th, pre, dt, dd, summary, figcaption, .react-code-text, [data-code-text]'
+    );
+    if (hasChildTarget) {
+      return;
+    }
+    targetElements.push(el);
+  });
+
+  const sentences: ExtractedSentence[] = [];
   const segmenter = new Intl.Segmenter('ja', { granularity: 'sentence' });
   let sentenceCounter = 0;
 
-  elements.forEach((el) => {
-    // If it's already processed, collect existing IDs
-    if (el.hasAttribute('data-ruri-processed')) {
-      const spans = el.querySelectorAll('span[data-ruri-id]');
-      if (spans.length > 0) {
-        spans.forEach(span => {
-          const id = span.getAttribute('data-ruri-id')!;
-          sentencesMap.set(id, (sentencesMap.get(id) || '') + (span.textContent || ''));
-        });
-      } else if (el.hasAttribute('data-ruri-id')) {
-        const id = el.getAttribute('data-ruri-id')!;
-        sentencesMap.set(id, (sentencesMap.get(id) || '') + (el.textContent || ''));
-      }
-      return;
-    }
+  // 既に走査済みのテキストノードを追跡して重複抽出を防止
+  const visitedTextNodes = new Set<Node>();
 
+  targetElements.forEach((el) => {
+    el.setAttribute('data-ruri-processed', 'true');
     const walker = doc.createTreeWalker(el, 4 /* NodeFilter.SHOW_TEXT */, null);
-    const textNodes: { node: Text, start: number, end: number, text: string }[] = [];
+    const textNodes: { node: Text; start: number; end: number; text: string }[] = [];
     let n: Text | null;
     let offset = 0;
     let combinedText = '';
-    
+
     while ((n = walker.nextNode() as Text)) {
+      if (visitedTextNodes.has(n)) continue;
       const text = n.nodeValue || '';
+      if (!text.trim()) continue;
+
+      visitedTextNodes.add(n);
       textNodes.push({ node: n, start: offset, end: offset + text.length, text });
       combinedText += text;
       offset += text.length;
     }
-    
+
     if (combinedText.trim().length === 0) return;
 
+    // 日本語文分割
     const segments = Array.from(segmenter.segment(combinedText)).filter(s => s.segment.trim().length > 0);
     if (segments.length === 0) return;
 
-    const indexToId = new Map<number, string>();
     for (const seg of segments) {
+      const segText = seg.segment.trim();
+      const segStart = seg.index;
+      const segEnd = seg.index + seg.segment.length;
       const id = `ruri-sent-${sentenceCounter++}`;
-      indexToId.set(seg.index, id);
-      sentencesMap.set(id, seg.segment.trim());
-    }
 
-    let modified = false;
+      // 各文に対応する Range を作成（DOMツリーを破壊せずに文字位置を正確に参照）
+      const ranges: Range[] = [];
 
-    // To prevent modification during iteration, gather replacement actions
-    const replacements: { node: Text, fragment: DocumentFragment }[] = [];
-
-    for (const textNodeInfo of textNodes) {
-      const { node, start, end } = textNodeInfo;
-      const parent = node.parentNode;
-      if (!parent) continue;
-      
-      const overlappingSegments = segments.filter(seg => {
-        const segStart = seg.index;
-        const segEnd = seg.index + seg.segment.length;
-        return segStart < end && segEnd > start;
-      });
-      
-      if (overlappingSegments.length === 0) continue;
-
-      const fragment = doc.createDocumentFragment();
-      let currentPos = start;
-      
-      for (const seg of overlappingSegments) {
-        const segStart = seg.index;
-        const segEnd = seg.index + seg.segment.length;
-        
-        const overlapStart = Math.max(start, segStart);
-        const overlapEnd = Math.min(end, segEnd);
-        
-        if (overlapStart > currentPos) {
-          fragment.appendChild(doc.createTextNode(combinedText.substring(currentPos, overlapStart)));
+      for (const tInfo of textNodes) {
+        if (tInfo.end <= segStart || tInfo.start >= segEnd) {
+          continue;
         }
-        
-        const span = doc.createElement('span');
-        const id = indexToId.get(seg.index)!;
-        span.setAttribute('data-ruri-id', id);
-        span.textContent = combinedText.substring(overlapStart, overlapEnd);
-        fragment.appendChild(span);
-        
-        currentPos = overlapEnd;
+
+        const nodeStart = Math.max(0, segStart - tInfo.start);
+        const nodeEnd = Math.min(tInfo.text.length, segEnd - tInfo.start);
+
+        if (nodeStart < nodeEnd) {
+          try {
+            const range = doc.createRange();
+            range.setStart(tInfo.node, nodeStart);
+            range.setEnd(tInfo.node, nodeEnd);
+            ranges.push(range);
+          } catch (e) {
+            // Range 作成エラー時はスキップ
+          }
+        }
       }
-      
-      if (currentPos < end) {
-        fragment.appendChild(doc.createTextNode(combinedText.substring(currentPos, end)));
+
+      // フォールバック用の要素参照
+      if (ranges.length > 0) {
+        const parentEl = ranges[0].startContainer.parentElement;
+        if (parentEl && !parentEl.hasAttribute('data-ruri-id')) {
+          parentEl.setAttribute('data-ruri-id', id);
+        }
       }
-      
-      replacements.push({ node, fragment });
-      modified = true;
-    }
-    
-    // Apply replacements
-    for (const { node, fragment } of replacements) {
-      node.parentNode?.replaceChild(fragment, node);
-    }
-    
-    if (modified) {
-      el.setAttribute('data-ruri-processed', 'true');
-    } else {
-      // If no text nodes were modified (should be rare if there's text), just mark it
-      if (!el.hasAttribute('data-ruri-processed')) {
-        el.setAttribute('data-ruri-id', `ruri-sent-${sentenceCounter++}`);
-        el.setAttribute('data-ruri-processed', 'true');
-      }
+
+      sentences.push({
+        id,
+        text: segText,
+        ranges,
+        element: el
+      });
     }
   });
-  
-  const sentences: ExtractedSentence[] = [];
-  sentencesMap.forEach((text, id) => {
-    sentences.push({ id, text: text.trim() });
-  });
-  
+
   return sentences;
 }
 
@@ -143,22 +127,32 @@ export function computeCosineSimilarity(vecA: Float32Array, vecB: Float32Array):
 }
 
 export function computeHybridScore(
-  similarity: number, 
-  text: string, 
-  query: string, 
-  isHybrid: boolean = true
-): { score: number, matched: boolean } {
-  let finalScore = similarity;
-  let matched = false;
-  
-  const searchPattern = query.trim().toLowerCase();
-  
-  if (isHybrid && searchPattern.length > 0) {
-    if (text.toLowerCase().includes(searchPattern)) {
-      finalScore += 0.25;
-      matched = true;
+  cosineSim: number,
+  text: string,
+  query: string,
+  isHybrid: boolean
+): { score: number; matched: boolean } {
+  if (!isHybrid) {
+    return { score: cosineSim, matched: false };
+  }
+
+  const normalizedText = text.toLowerCase();
+  const normalizedQuery = query.toLowerCase().trim();
+
+  // 完全一致または部分一致の判定
+  if (normalizedQuery.length > 0 && normalizedText.includes(normalizedQuery)) {
+    // 一致した場合は +0.25 ブースト
+    return { score: cosineSim + 0.25, matched: true };
+  }
+
+  // クエリが複数単語の場合（空白区切り）、いずれかの単語が含まれているか判定
+  const queryTokens = normalizedQuery.split(/\s+/).filter(t => t.length > 1);
+  if (queryTokens.length > 1) {
+    const hasAny = queryTokens.some(token => normalizedText.includes(token));
+    if (hasAny) {
+      return { score: cosineSim + 0.15, matched: true };
     }
   }
-  
-  return { score: finalScore, matched };
+
+  return { score: cosineSim, matched: false };
 }
