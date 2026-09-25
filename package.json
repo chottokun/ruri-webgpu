@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "build:extension": "vite build -c extension/vite.config.ts",
     "zip:extension": "npm run build:extension && (cd dist-extension && zip -r ../ruri-webgpu-chrome-extension.zip .) && ls -lh ruri-webgpu-chrome-extension.zip",
+    "release": "node scripts/release.js",
     "test": "vitest run",
     "preview": "vite preview"
   },
