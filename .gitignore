@@ -19,6 +19,7 @@ node_modules/
 dist/
 dist-extension/
 dist-ssr/
+*.zip
 
 # エディタ・OS
 .DS_Store
