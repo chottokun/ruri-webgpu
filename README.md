@@ -19,16 +19,36 @@ ruri-v3-30m-liteの WebGPU 日本語セマンティック検索デモ
 # 依存関係のインストール
 npm install
 
-# 開発サーバーの起動
+# Webアプリ開発サーバーの起動
 npm run dev
 
-# プロダクションビルド
+# Webアプリ プロダクションビルド
 npm run build
+
+# テストの実行
+npm run test
+
+# Chrome 拡張機能のビルド (出力先: dist-extension/)
+npm run build:extension
+
+# Chrome 拡張機能のビルド＆ZIP化 (出力: ruri-webgpu-chrome-extension.zip)
+npm run zip:extension
 ```
 
 ## Chrome 拡張機能
 
-Web記事の閲覧中に `Cmd+K` / `Ctrl+K` で即座に呼び出せる、WebGPU 活用型インライン意味検索拡張機能を提供しています。
+Web記事の閲覧中に `Ctrl+F` / `Cmd+F` (または `Ctrl+K`, `Ctrl+Shift+F`) で即座に呼び出せる、WebGPU 活用型インライン意味検索拡張機能を提供しています。
+
+**導入手順**:
+1. `npm run build:extension` で拡張機能をビルドします（または `npm run zip:extension` でZIPを生成し解凍）。
+2. Chrome で `chrome://extensions/` を開き、「デベロッパー モード」をオンにします。
+3. 「パッケージ化されていない拡張機能を読み込む」から、ビルドされた `dist-extension/` フォルダを選択して導入します。
+
+**主な操作**:
+- `Enter` / `Shift+Enter`: 次/前の一致箇所へ移動
+- `Alt+H`: ハイライト表示のトグル
+- `Esc`: 検索バーを閉じる
+
 詳細は [Chrome 拡張機能ドキュメント](docs/EXTENSION.md) を参照してください。
 
 ## 技術ドキュメント

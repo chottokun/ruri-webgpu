@@ -47,3 +47,10 @@
 * **方法**:
   - BM25 などのキーワード完全一致検索と、ベクトル検索（ruri-v3）を組み合わせ、スコアを線形結合（Reciprocal Rank Fusion など）します。
   - 英字の専門用語（`GPU`, `WebGPU`, `Docker` など）はキーワード完全一致で強くブーストし、文脈や関連性はセマンティック検索で拾う構成です。
+
+---
+
+## 関連ドキュメント
+
+- [Chrome 拡張機能仕様・利用ガイド](./EXTENSION.md)
+- [Vite における ONNX Runtime Web Worker 混線バグと根本解決メモ](./vite_worker_bundling_troubleshooting.md)
