@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ruri-webgpu 意味検索",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "閲覧中のWebページ内を Cmd+F のようにセマンティック（意味）＆ハイブリッドでストリーム検索・ハイライトする拡張機能",
   "permissions": [
     "offscreen",
