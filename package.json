@@ -17,7 +17,7 @@
     "onnxruntime-web": "^1.21.0"
   },
   "devDependencies": {
-    "@types/chrome": "^0.3.0",
+    "@types/chrome": "^0.3.4",
     "@types/node": "^26.6.2",
     "@types/puppeteer": "^7.0.4",
     "coi-serviceworker": "^0.1.7",
