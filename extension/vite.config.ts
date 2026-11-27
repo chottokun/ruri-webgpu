@@ -25,10 +25,10 @@ function copyOrtAssetsPlugin() {
         if (file === 'ort.all.min.js') {
           let content = fs.readFileSync(srcFile, 'utf-8');
           // Chrome MV3動的import回避: globalThis.__ortWasmThreaded が存在する場合は動的importをバイパス
-          const target = 'q1=async r=>(await import(/*webpackIgnore:true*/ /*@vite-ignore*/r)).default';
-          const replacement = 'q1=async r=>globalThis.__ortWasmThreaded||(await import(/*webpackIgnore:true*/ /*@vite-ignore*/r)).default';
-          if (content.includes(target)) {
-            content = content.replace(target, replacement);
+          // ort のバージョンごとに minify された変数名が変わるため、正規表現で識別子を保持したまま書き換える
+          const pattern = /([A-Za-z_$][\w$]*)=async r=>\(await import\(\/\*webpackIgnore:true\*\/ \/\*@vite-ignore\*\/r\)\)\.default/;
+          if (pattern.test(content)) {
+            content = content.replace(pattern, '$1=async r=>globalThis.__ortWasmThreaded||(await import(/*webpackIgnore:true*/ /*@vite-ignore*/r)).default');
             console.log('Successfully patched ort.all.min.js to bypass dynamic import.');
           } else {
             console.warn('Target string not found in ort.all.min.js for patching!');

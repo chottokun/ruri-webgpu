@@ -19,7 +19,7 @@ function getOrt(): typeof ort {
 
   if (!globalOrt.env.wasm.wasmPaths) {
     const isExtension = typeof globalThis !== 'undefined' && !!(globalThis as any).chrome?.runtime?.id;
-    globalOrt.env.wasm.wasmPaths = isExtension ? './assets/ort/' : 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
+    globalOrt.env.wasm.wasmPaths = isExtension ? './assets/ort/' : 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/';
   }
 
   return globalOrt;
@@ -68,7 +68,7 @@ export class EmbeddingModel {
     const ortInstance = getOrt();
     if (!ortInstance.env.wasm.wasmPaths) {
       const isExtension = typeof globalThis !== 'undefined' && !!(globalThis as any).chrome?.runtime?.id;
-      ortInstance.env.wasm.wasmPaths = isExtension ? './assets/ort/' : 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
+      ortInstance.env.wasm.wasmPaths = isExtension ? './assets/ort/' : 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/';
     }
     ortInstance.env.wasm.numThreads = 1;
 
